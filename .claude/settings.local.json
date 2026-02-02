@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__sequential-thinking__sequentialthinking",
+      "Bash(pnpm --version)",
+      "Bash(pnpm install)",
+      "Bash(pnpm --filter @clipmark/shared build)",
+      "Bash(pnpm --filter @clipmark/mcp-server build)",
+      "Bash(pnpm --filter @clipmark/extension build)",
+      "Bash(pnpm build)",
+      "Bash(pnpm --filter @clipmark/shared add jsdom)",
+      "Bash(pnpm --filter @clipmark/shared add -D @types/jsdom)",
+      "Bash(pnpm --filter @clipmark/shared remove jsdom @types/jsdom)",
+      "Bash(pnpm --filter @clipmark/shared add linkedom)",
+      "Bash(pnpm run build)",
+      "Bash(npx tsx test-converter.ts)",
+      "Bash(pnpm exec tsx test-converter.ts)",
+      "Bash(pnpm add -D tsx ts-node)"
+    ]
+  }
+}

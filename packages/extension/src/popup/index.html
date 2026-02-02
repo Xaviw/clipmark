@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ClipMark</title>
+  <link rel="stylesheet" href="styles/main.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- 状态栏 -->
+    <div id="status-bar" class="status-bar">
+      <div class="status-item">
+        <span class="status-label">当前页面：</span>
+        <span id="page-status" class="status-value">检测中...</span>
+      </div>
+      <div id="mcp-status" class="status-item status-warning" style="display: none;">
+        <span class="status-icon">⚠️</span>
+        <span class="status-value">服务未连接</span>
+      </div>
+    </div>
+
+    <!-- 历史记录列表 -->
+    <div id="history-section" class="history-section">
+      <div class="section-header">
+        <h2 class="section-title">历史记录</h2>
+        <button id="refresh-btn" class="icon-button" title="刷新">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 2a6 6 0 1 0 6 6h-2a4 4 0 1 1-4-4V2z"/>
+            <path d="M8 0V4L4 0 8 0z"/>
+            <path d="M8 16V12L12 16 8 16z"/>
+          </svg>
+        </button>
+      </div>
+
+      <div id="history-list" class="history-list">
+        <!-- 历史记录项将动态插入 -->
+      </div>
+
+      <div id="empty-state" class="empty-state" style="display: none;">
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M16 16h16v16H16z"/>
+          <path d="M24 8v40M8 24h32"/>
+        </svg>
+        <p>暂无历史记录</p>
+        <p class="empty-hint">在网页中复制内容后会自动保存</p>
+      </div>
+    </div>
+
+    <!-- 设置区域 -->
+    <div id="settings-section" class="settings-section">
+      <h2 class="section-title">设置</h2>
+
+      <div class="setting-group">
+        <label class="setting-label" for="enabled-urls">
+          启用网址
+          <span class="setting-hint">每行一个网址，支持通配符。留空表示所有网站启用。</span>
+        </label>
+        <textarea
+          id="enabled-urls"
+          class="setting-textarea"
+          placeholder="*://*.example.com/*&#10;https://github.com/*"
+          rows="3"
+        ></textarea>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-group">
+          <label class="setting-label" for="max-items">
+            缓存数量
+            <span class="setting-hint">最多保留的历史记录数量</span>
+          </label>
+          <input
+            id="max-items"
+            type="number"
+            class="setting-input"
+            min="1"
+            max="100"
+            value="5"
+          />
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-checkbox">
+            <input id="auto-copy" type="checkbox" />
+            <span>转换后自动复制到剪贴板</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="setting-actions">
+        <button id="clear-all-btn" class="button button-danger">清空所有记录</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.ts"></script>
+</body>
+</html>
