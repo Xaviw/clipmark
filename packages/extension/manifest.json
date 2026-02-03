@@ -3,16 +3,8 @@
   "name": "ClipMark",
   "version": "0.1.0",
   "description": "智能剪贴板转Markdown工具",
-  "permissions": [
-    "clipboardRead",
-    "clipboardWrite",
-    "notifications",
-    "storage",
-    "activeTab"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
+  "permissions": ["clipboardRead", "clipboardWrite", "notifications", "storage", "activeTab"],
+  "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "src/background/index.ts",
     "type": "module"

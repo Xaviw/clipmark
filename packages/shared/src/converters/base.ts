@@ -23,28 +23,3 @@ export interface ContentConverter {
    */
   readonly name: string;
 }
-
-/**
- * 占位符信息
- */
-export interface PlaceholderInfo {
-  type: 'image' | 'iframe' | 'video' | 'audio' | 'canvas' | 'svg' | 'unknown';
-  description: string;
-  index: number;
-}
-
-/**
- * 转换上下文
- */
-export interface ConversionContext {
-  /** 来源URL */
-  url: string;
-  /** 图片计数器 */
-  imageCounter: number;
-  /** iframe计数器 */
-  iframeCounter: number;
-  /** 其他占位符计数器 */
-  otherCounter: number;
-  /** 占位符列表 */
-  placeholders: PlaceholderInfo[];
-}

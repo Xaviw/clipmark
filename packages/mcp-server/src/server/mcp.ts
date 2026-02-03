@@ -10,6 +10,7 @@ import {
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import { getStorage } from './storage.js';
+import { startHttpServer } from './http.js';
 
 /**
  * MCP 工具定义
@@ -17,8 +18,7 @@ import { getStorage } from './storage.js';
 const MCP_TOOLS: Tool[] = [
   {
     name: 'get_latest_capture',
-    description:
-      '获取最新转换的剪贴板内容。返回最近一次从浏览器复制并转换为Markdown的内容。',
+    description: '获取最新转换的剪贴板内容。返回最近一次从浏览器复制并转换为Markdown的内容。',
     inputSchema: {
       type: 'object' as const,
       properties: {},
@@ -36,7 +36,7 @@ const MCP_TOOLS: Tool[] = [
           description: '项目ID',
         },
       },
-      required: ['id'] as const[],
+      required: ['id'] as const,
     },
   },
 ];
@@ -156,12 +156,23 @@ export async function createMCPServer(): Promise<Server> {
 
 /**
  * 启动 MCP 服务器（stdio 模式）
+ * 同时启动 HTTP 服务器用于浏览器扩展通信
  */
 export async function startMCPServer(): Promise<void> {
+  // 先启动 HTTP 服务器（单例模式，确保不会重复启动）
+  // 如果返回 null，说明已有 HTTP 服务器在运行
+  const httpServer = await startHttpServer();
+
+  // 创建并启动 MCP 服务器
   const server = await createMCPServer();
   const transport = new StdioServerTransport();
 
   await server.connect(transport);
 
   console.error('ClipMark MCP Server running on stdio');
+  if (httpServer) {
+    console.error('HTTP Server started for browser extension communication');
+  } else {
+    console.error('HTTP Server is already running for browser extension communication');
+  }
 }

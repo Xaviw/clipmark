@@ -1,14 +1,15 @@
 {
   "name": "clipmark",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "智能剪贴板转Markdown工具",
   "scripts": {
-    "dev": "pnpm --filter \"./packages/*\" dev",
-    "build": "pnpm --filter \"./packages/*\" build",
+    "dev": "pnpm -r dev",
+    "build": "pnpm -r build",
+    "start": "pnpm --filter @clipmark/mcp-server start",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --build --clean && tsc --build --dry"
   },
   "keywords": [
     "clipboard",
@@ -19,8 +20,8 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
     "eslint": "^8.57.0",
     "prettier": "^3.2.5",
     "ts-node": "^10.9.2",

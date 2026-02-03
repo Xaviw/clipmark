@@ -11,15 +11,11 @@ import { initializeSettings } from './settings.js';
  * 初始化扩展
  */
 async function initialize(): Promise<void> {
-  console.log('ClipMark initializing...');
-
   // 初始化存储
   await initializeStorage();
 
   // 初始化设置
   await initializeSettings();
-
-  console.log('ClipMark initialized');
 }
 
 // 扩展安装时初始化

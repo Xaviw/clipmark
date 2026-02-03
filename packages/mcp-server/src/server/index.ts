@@ -1,15 +1,15 @@
 /**
  * ClipMark MCP Server
- * 主入口
+ * 主入口 - 默认启动 MCP + HTTP 服务
  */
 
 import { initializeStorage } from './storage.js';
-import { startHttpServer } from './http.js';
 import { startMCPServer } from './mcp.js';
 import { getConfig, validateConfig } from '../config/index.js';
 
 /**
  * 主函数
+ * 默认启动 MCP 模式，此时会自动启动 HTTP 服务器
  */
 async function main(): Promise<void> {
   const config = getConfig();
@@ -21,26 +21,17 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // 初始化存储
-  console.log('Initializing storage...');
+  // 初始化存储（使用 stderr 输出，避免干扰 MCP stdio）
+  console.error('Initializing storage...');
   await initializeStorage();
-  console.log(`Storage initialized at ${config.dataDir}`);
+  console.error(`Storage initialized at ${config.dataDir}`);
 
-  // 检查运行模式
-  const mode = process.env.CLIPMARK_MODE || 'http';
-
-  if (mode === 'mcp') {
-    // MCP 模式 (stdio)
-    console.log('Starting in MCP mode...');
-    await startMCPServer();
-  } else {
-    // HTTP 模式 (默认)
-    console.log('Starting in HTTP mode...');
-    await startHttpServer();
-  }
+  // 启动 MCP 服务器（会自动启动 HTTP 服务器）
+  console.error('Starting ClipMark Server (MCP + HTTP)...');
+  await startMCPServer();
 }
 
-// 错误处理
+// 错误处理（输出到 stderr）
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
   process.exit(1);

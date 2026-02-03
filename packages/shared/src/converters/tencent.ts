@@ -1,6 +1,46 @@
 import TurndownService from 'turndown';
 import { parseHTML } from 'linkedom';
-import { ContentConverter, ConversionContext } from './base';
+import { ContentConverter } from './base';
+
+/**
+ * 转换上下文（内部使用）
+ */
+interface ConversionContext {
+  /** 来源URL */
+  url: string;
+  /** 图片计数器 */
+  imageCounter: number;
+  /** iframe计数器 */
+  iframeCounter: number;
+  /** 其他占位符计数器 */
+  otherCounter: number;
+  /** 占位符列表 */
+  placeholders: unknown[];
+}
+
+/**
+ * 扩展的 TurndownService 类型
+ * 包含我们注入的自定义属性
+ */
+interface TurndownServiceWithContext extends TurndownService {
+  options: TurndownService['options'] & {
+    __conversionContext__?: ConversionContext;
+  };
+}
+
+/**
+ * 从 turndown options 获取转换上下文的辅助函数
+ */
+function getConversionContext(options: unknown): ConversionContext | undefined {
+  return (options as { __conversionContext__?: ConversionContext }).__conversionContext__;
+}
+
+/**
+ * 将转换上下文设置到 turndown service 的辅助函数
+ */
+function setConversionContext(service: TurndownService, context: ConversionContext): void {
+  (service as TurndownServiceWithContext).options.__conversionContext__ = context;
+}
 
 /**
  * 腾讯文档转换器
@@ -50,7 +90,7 @@ export class TencentConverter implements ContentConverter {
     this.removeEmptyTags(doc.document.body);
 
     // 将 context 注入到 turndownService 的 options 中
-    (this.turndownService as any).options.__conversionContext__ = context;
+    setConversionContext(this.turndownService, context);
 
     // 转换为Markdown
     let markdown = this.turndownService.turndown(doc.document.body);
@@ -197,7 +237,7 @@ export class TencentConverter implements ContentConverter {
         if (!content) return '';
         // 将内容按行分割，每行前面加上 >，空行用 > 表示
         const lines = content.trim().split('\n');
-        const quotedLines = lines.map(line => {
+        const quotedLines = lines.map((line) => {
           const trimmed = line.trim();
           return trimmed ? `> ${trimmed}` : '>';
         });
@@ -217,7 +257,7 @@ export class TencentConverter implements ContentConverter {
         if (!content) return '';
         // 将内容按行分割，每行前面加上 >，空行用 > 表示
         const lines = content.trim().split('\n');
-        const quotedLines = lines.map(line => {
+        const quotedLines = lines.map((line) => {
           const trimmed = line.trim();
           return trimmed ? `> ${trimmed}` : '>';
         });
@@ -347,7 +387,7 @@ export class TencentConverter implements ContentConverter {
         const src = img.getAttribute('src') || '';
 
         // 获取上下文
-        const context = (options as any).__conversionContext__ as ConversionContext;
+        const context = getConversionContext(options);
         if (!context) return '';
 
         context.imageCounter++;
@@ -377,7 +417,7 @@ export class TencentConverter implements ContentConverter {
         const dataFieldCode = anchor.getAttribute('data-field-code') || '';
 
         // 获取上下文
-        const context = (options as any).__conversionContext__ as ConversionContext;
+        const context = getConversionContext(options);
 
         // 带 data-field-code="HYPERLINK 的链接
         if (dataFieldCode.includes('HYPERLINK')) {

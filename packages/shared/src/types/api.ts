@@ -4,6 +4,8 @@ import { ClipItem } from './item';
  * 保存项目请求
  */
 export interface SaveItemRequest {
+  /** 可选的项目ID（如果提供，将使用此ID而不是生成新的） */
+  id?: string;
   /** 转换后的Markdown内容 */
   content: string;
   /** 原始纯文本 */
@@ -51,14 +53,4 @@ export interface DeleteItemResponse {
   success: boolean;
   /** 消息（可选） */
   message?: string;
-}
-
-/**
- * API错误响应
- */
-export interface ApiErrorResponse {
-  /** 错误消息 */
-  error: string;
-  /** 错误代码 */
-  code?: string;
 }

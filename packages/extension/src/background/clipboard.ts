@@ -3,11 +3,10 @@
  */
 
 import { getSettings } from './settings.js';
-import { saveItem, getAllItems } from './storage.js';
+import { saveItem } from './storage.js';
 import { convertContent } from './converter.js';
 import { saveToMCP, checkMCPConnection, deleteFromMCP, deleteManyFromMCP } from './api.js';
 import { matchAnyPattern, CONTENT_LIMITS } from '@clipmark/shared';
-import { NOTIFICATION_MESSAGES, NOTIFICATION_CONFIG } from '@clipmark/shared';
 
 /**
  * 检查URL是否在启用列表中
@@ -103,7 +102,10 @@ async function handleClipboardContent(html: string, plain: string): Promise<void
     console.log('[ClipMark Background] 处理完成！');
   } catch (error) {
     console.error('[ClipMark Background] 处理失败:', error);
-    console.error('[ClipMark Background] 错误堆栈:', error instanceof Error ? error.stack : String(error));
+    console.error(
+      '[ClipMark Background] 错误堆栈:',
+      error instanceof Error ? error.stack : String(error)
+    );
 
     // 转换失败，保存原始文本
     try {
@@ -116,28 +118,6 @@ async function handleClipboardContent(html: string, plain: string): Promise<void
       console.error('[ClipMark Background] 保存降级内容也失败了:', saveError);
     }
   }
-}
-
-/**
- * 显示通知
- */
-function showNotification(title: string, message: string): void {
-  chrome.notifications.create({
-    type: 'basic',
-    iconUrl: chrome.runtime.getURL('public/icons/icon-48.png'),
-    title,
-    message,
-    silent: false,
-  });
-
-  // 自动关闭通知
-  setTimeout(() => {
-    chrome.notifications.getAll((notifications) => {
-      for (const id of Object.keys(notifications)) {
-        chrome.notifications.clear(id);
-      }
-    });
-  }, NOTIFICATION_CONFIG.DURATION);
 }
 
 /**
@@ -207,9 +187,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     deleteFromMCP(message.id);
   } else if (message.type === 'CLEAR_ALL_ITEMS') {
     // 处理清空所有项目请求（静默失败）
-    getAllItems().then((items) => {
-      const ids = items.map((item) => item.id);
-      return deleteManyFromMCP(ids);
-    });
+    // 使用传入的 ID 列表，而不是从本地存储获取
+    // 因为本地存储可能已经被清空了
+    const ids = (message.ids as string[]) || [];
+    if (ids.length > 0) {
+      deleteManyFromMCP(ids);
+    }
   }
 });

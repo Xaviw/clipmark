@@ -4,7 +4,7 @@ import type { AppSettings } from './config';
  * 剪贴板项目数据结构
  */
 export interface ClipItem {
-  /** 唯一ID (UUID) */
+  /** 唯一ID (4位数字) */
   id: string;
   /** 转换后的Markdown内容 */
   content: string;
@@ -35,16 +35,4 @@ export interface StorageData {
   items: ClipItem[];
   /** 用户设置 */
   settings: AppSettings;
-}
-
-/**
- * 内容占位符信息
- */
-export interface PlaceholderInfo {
-  /** 占位符类型 */
-  type: 'image' | 'iframe' | 'video' | 'audio' | 'canvas' | 'svg' | 'unknown';
-  /** 描述 */
-  description: string;
-  /** 序号 */
-  index: number;
 }

@@ -2,44 +2,25 @@
  * ClipMark Popup Application
  */
 
-import { createStore } from './store/index.js';
-
-// ========== Type Definitions ==========
-interface ClipItem {
-  id: string;
-  content: string;
-  metadata: {
-    sourceUrl: string;
-    title: string;
-    timestamp: number;
-  };
-  createdAt: number;
-  size: number;
-}
-
-interface AppSettings {
-  maxItems: number;
-  autoCopy: boolean;
-  enabledUrls: string[];
-}
+import type { AppSettings, ClipItem } from '@clipmark/shared';
+import { createStore, type StoreState } from './store/index.js';
 
 // ========== Global State ==========
 let store: Awaited<ReturnType<typeof createStore>> | null = null;
 
 // ========== DOM Elements ==========
 const elements = {
-  statusBar: {
-    pageStatus: document.getElementById('page-status')!,
-    mcpStatus: document.getElementById('mcp-status')!,
-  },
+  pageStatus: document.getElementById('page-status')!,
   historyList: document.getElementById('history-list')!,
   emptyState: document.getElementById('empty-state')!,
   refreshBtn: document.getElementById('refresh-btn')!,
+  clearAllBtn: document.getElementById('clear-all-btn')!,
   settings: {
+    toggle: document.getElementById('settings-toggle')!,
+    content: document.getElementById('settings-content')!,
     enabledUrls: document.getElementById('enabled-urls') as HTMLTextAreaElement,
     maxItems: document.getElementById('max-items') as HTMLInputElement,
     autoCopy: document.getElementById('auto-copy') as HTMLInputElement,
-    clearAllBtn: document.getElementById('clear-all-btn')!,
   },
 };
 
@@ -87,30 +68,30 @@ function render(): void {
   renderSettings(state.settings);
 }
 
-function renderStatusBar(state: ReturnType<typeof store.get>): void {
-  const { pageStatus, mcpStatus } = elements.statusBar;
+function renderStatusBar(state: StoreState): void {
+  const { pageStatus } = elements;
 
   // 当前页面状态
   pageStatus.textContent = state.currentPageEnabled ? '已启用' : '未启用';
-  pageStatus.className = `status-value ${state.currentPageEnabled ? 'enabled' : 'disabled'}`;
-
-  // MCP 连接状态
-  mcpStatus.style.display = state.mcpConnected ? 'none' : 'flex';
+  pageStatus.className = `status-badge ${state.currentPageEnabled ? 'enabled' : 'disabled'}`;
 }
 
 function renderHistoryList(items: ClipItem[]): void {
   const { historyList, emptyState } = elements;
 
   if (items.length === 0) {
-    historyList.style.display = 'none';
-    emptyState.style.display = 'flex';
+    historyList.hidden = true;
+    emptyState.hidden = false;
     return;
   }
 
-  historyList.style.display = 'block';
-  emptyState.style.display = 'none';
+  historyList.hidden = false;
+  emptyState.hidden = true;
 
-  historyList.innerHTML = items.map((item) => createHistoryItemHTML(item)).join('');
+  // 按创建时间降序排序（最新的在最上面）
+  const sortedItems = [...items].sort((a, b) => b.createdAt - a.createdAt);
+
+  historyList.innerHTML = sortedItems.map((item) => createHistoryItemHTML(item)).join('');
 
   // 绑定历史记录项事件
   bindHistoryItemEvents();
@@ -132,7 +113,10 @@ function createHistoryItemHTML(item: ClipItem): string {
         <div class="history-item-preview">${preview}${item.content.length > 200 ? '...' : ''}</div>
       </div>
       <div class="history-item-footer">
-        <span class="history-item-size">${size}</span>
+        <div class="history-item-meta">
+          <span class="history-item-id" title="ID: ${item.id}">#${item.id}</span>
+          <span class="history-item-size">${size}</span>
+        </div>
         <div class="history-item-actions">
           <button class="history-item-action copy-btn" data-id="${item.id}" title="复制到剪贴板">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -176,13 +160,29 @@ function bindEvents(): void {
   // 刷新按钮
   elements.refreshBtn.addEventListener('click', refreshItems);
 
+  // 设置区域折叠切换
+  elements.settings.toggle.addEventListener('click', toggleSettings);
+
   // 设置输入
   elements.settings.enabledUrls.addEventListener('input', handleUrlsChange);
   elements.settings.maxItems.addEventListener('input', handleMaxItemsChange);
   elements.settings.autoCopy.addEventListener('change', handleAutoCopyChange);
 
   // 清空所有按钮
-  elements.settings.clearAllBtn.addEventListener('click', handleClearAll);
+  elements.clearAllBtn.addEventListener('click', handleClearAll);
+}
+
+function toggleSettings(): void {
+  const { toggle, content } = elements.settings;
+  const isExpanded = !content.hidden;
+
+  if (isExpanded) {
+    content.hidden = true;
+    toggle.classList.remove('expanded');
+  } else {
+    content.hidden = false;
+    toggle.classList.add('expanded');
+  }
 }
 
 function bindHistoryItemEvents(): void {
@@ -302,11 +302,20 @@ async function handleClearAll(): Promise<void> {
   if (!confirmed) return;
 
   try {
+    // 先获取所有项目的 ID，用于后续删除 MCP 服务器数据
+    const items = await new Promise<ClipItem[]>((resolve) => {
+      chrome.storage.local.get('items', (result) => {
+        resolve((result.items as ClipItem[]) || []);
+      });
+    });
+
+    const ids = items.map((item) => item.id);
+
     // 清空本地存储
     await chrome.storage.local.set({ items: [] });
 
-    // 通知 background 清空 MCP 服务器数据
-    chrome.runtime.sendMessage({ type: 'CLEAR_ALL_ITEMS' });
+    // 通知 background 清空 MCP 服务器数据（传入 ID 列表）
+    chrome.runtime.sendMessage({ type: 'CLEAR_ALL_ITEMS', ids });
 
     // 刷新列表
     await refreshItems();
@@ -332,7 +341,9 @@ async function refreshSettings(): Promise<void> {
 
   const settings = await new Promise<AppSettings>((resolve) => {
     chrome.storage.sync.get('settings', (result) => {
-      resolve((result.settings as AppSettings) || { maxItems: 5, autoCopy: false, enabledUrls: [] });
+      resolve(
+        (result.settings as AppSettings) || { maxItems: 5, autoCopy: false, enabledUrls: [] }
+      );
     });
   });
 

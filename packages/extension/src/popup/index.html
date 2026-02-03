@@ -8,90 +8,71 @@
 </head>
 <body>
   <div id="app">
-    <!-- 状态栏 -->
-    <div id="status-bar" class="status-bar">
-      <div class="status-item">
-        <span class="status-label">当前页面：</span>
-        <span id="page-status" class="status-value">检测中...</span>
-      </div>
-      <div id="mcp-status" class="status-item status-warning" style="display: none;">
-        <span class="status-icon">⚠️</span>
-        <span class="status-value">服务未连接</span>
-      </div>
-    </div>
+    <header class="app-header">
+      <h1>ClipMark <span id="page-status" class="status-badge enabled">已启用</span></h1>
+      <p class="app-description">复制时自动转换为 Markdown 并保存</p>
+    </header>
 
-    <!-- 历史记录列表 -->
-    <div id="history-section" class="history-section">
+    <main class="history-section">
       <div class="section-header">
         <h2 class="section-title">历史记录</h2>
-        <button id="refresh-btn" class="icon-button" title="刷新">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M8 2a6 6 0 1 0 6 6h-2a4 4 0 1 1-4-4V2z"/>
-            <path d="M8 0V4L4 0 8 0z"/>
-            <path d="M8 16V12L12 16 8 16z"/>
-          </svg>
-        </button>
+        <div class="header-actions">
+          <button id="clear-all-btn" class="button-clear" title="清空所有记录">清空</button>
+          <button id="refresh-btn" class="icon-button" title="刷新">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 2v6h-6"/>
+              <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+              <path d="M3 22v-6h6"/>
+              <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
-      <div id="history-list" class="history-list">
-        <!-- 历史记录项将动态插入 -->
-      </div>
+      <div id="history-list" class="history-list"></div>
 
-      <div id="empty-state" class="empty-state" style="display: none;">
-        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M16 16h16v16H16z"/>
-          <path d="M24 8v40M8 24h32"/>
+      <div id="empty-state" class="empty-state" hidden>
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+          <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
         </svg>
         <p>暂无历史记录</p>
-        <p class="empty-hint">在网页中复制内容后会自动保存</p>
+        <p class="empty-hint">复制内容后自动保存</p>
       </div>
-    </div>
+    </main>
 
-    <!-- 设置区域 -->
-    <div id="settings-section" class="settings-section">
-      <h2 class="section-title">设置</h2>
+    <footer class="settings-section">
+      <button id="settings-toggle" class="settings-toggle">
+        <span class="settings-toggle-title">设置</span>
+        <svg class="settings-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
 
-      <div class="setting-group">
-        <label class="setting-label" for="enabled-urls">
-          启用网址
-          <span class="setting-hint">每行一个网址，支持通配符。留空表示所有网站启用。</span>
-        </label>
-        <textarea
-          id="enabled-urls"
-          class="setting-textarea"
-          placeholder="*://*.example.com/*&#10;https://github.com/*"
-          rows="3"
-        ></textarea>
-      </div>
+      <div id="settings-content" class="settings-content" hidden>
+        <div class="settings-inner">
+          <div class="setting-group">
+            <label class="setting-label" for="enabled-urls">
+              启用网址
+              <span class="setting-hint">留空表示所有网站启用</span>
+            </label>
+            <textarea id="enabled-urls" class="setting-textarea" rows="2" placeholder="*://*.example.com/*"></textarea>
+          </div>
 
-      <div class="setting-row">
-        <div class="setting-group">
-          <label class="setting-label" for="max-items">
-            缓存数量
-            <span class="setting-hint">最多保留的历史记录数量</span>
-          </label>
-          <input
-            id="max-items"
-            type="number"
-            class="setting-input"
-            min="1"
-            max="100"
-            value="5"
-          />
-        </div>
+          <div class="setting-row-inline">
+            <label class="setting-checkbox">
+              <input id="auto-copy" type="checkbox" />
+              <span>自动复制</span>
+            </label>
 
-        <div class="setting-group">
-          <label class="setting-checkbox">
-            <input id="auto-copy" type="checkbox" />
-            <span>转换后自动复制到剪贴板</span>
-          </label>
+            <div class="setting-group-inline">
+              <label class="setting-label-inline" for="max-items">缓存数量</label>
+              <input id="max-items" type="number" class="setting-input-small" min="1" max="100" value="5" />
+            </div>
+          </div>
         </div>
       </div>
-
-      <div class="setting-actions">
-        <button id="clear-all-btn" class="button button-danger">清空所有记录</button>
-      </div>
-    </div>
+    </footer>
   </div>
 
   <script type="module" src="app.ts"></script>

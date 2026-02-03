@@ -2,9 +2,11 @@
  * 响应式状态管理 Store
  */
 
+import type { ClipItem, AppSettings } from '@clipmark/shared';
+
 type Listener = () => void;
 
-interface StoreState {
+export interface StoreState {
   items: ClipItem[];
   settings: AppSettings;
   currentPageUrl: string;
@@ -113,7 +115,9 @@ async function getItems(): Promise<ClipItem[]> {
 async function getSettings(): Promise<AppSettings> {
   return new Promise((resolve) => {
     chrome.storage.sync.get('settings', (result) => {
-      resolve((result.settings as AppSettings) || { maxItems: 5, autoCopy: false, enabledUrls: [] });
+      resolve(
+        (result.settings as AppSettings) || { maxItems: 5, autoCopy: false, enabledUrls: [] }
+      );
     });
   });
 }

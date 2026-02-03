@@ -31,6 +31,7 @@ export async function checkMCPConnection(): Promise<boolean> {
 export async function saveToMCP(item: ClipItem): Promise<boolean> {
   try {
     const request: SaveItemRequest = {
+      id: item.id, // 传递扩展生成的 ID
       content: item.content,
       originalPlain: item.originalPlain,
       originalHtml: item.originalHtml,

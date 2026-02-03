@@ -2,16 +2,13 @@
  * Health check 路由
  */
 
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { getStorage } from '../server/storage.js';
 
 /**
  * 健康检查处理器
  */
-async function healthCheckHandler(
-  request: unknown,
-  reply: FastifyReply
-): Promise<{
+async function healthCheckHandler(): Promise<{
   status: string;
   timestamp: number;
   uptime: number;

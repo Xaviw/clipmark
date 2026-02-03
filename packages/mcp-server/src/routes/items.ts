@@ -4,7 +4,13 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { getStorage } from '../server/storage.js';
-import type { SaveItemRequest, SaveItemResponse, GetItemsResponse, DeleteItemResponse } from '@clipmark/shared';
+import type {
+  SaveItemRequest,
+  SaveItemResponse,
+  GetItemsResponse,
+  DeleteItemResponse,
+  ClipItem,
+} from '@clipmark/shared';
 import { CONTENT_LIMITS } from '@clipmark/shared';
 
 /**
@@ -49,7 +55,7 @@ async function getItemsHandler(
 
     const result = await storage.getItems(limit, offset);
     return result;
-  } catch (error) {
+  } catch {
     reply.code(500);
     return {
       items: [],
@@ -153,81 +159,102 @@ async function deleteItemsHandler(
  */
 export async function itemsRoutes(fastify: FastifyInstance): Promise<void> {
   // 保存项目
-  fastify.post('/items', {
-    schema: {
-      body: {
-        type: 'object',
-        required: ['content', 'metadata'],
-        properties: {
-          content: { type: 'string', maxLength: CONTENT_LIMITS.MAX_CONTENT_SIZE },
-          originalPlain: { type: 'string' },
-          originalHtml: { type: 'string' },
-          metadata: {
-            type: 'object',
-            required: ['sourceUrl', 'title', 'timestamp'],
-            properties: {
-              sourceUrl: { type: 'string' },
-              title: { type: 'string' },
-              timestamp: { type: 'number' },
+  fastify.post(
+    '/items',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['content', 'metadata'],
+          properties: {
+            id: { type: 'string' }, // 可选的项目ID
+            content: { type: 'string', maxLength: CONTENT_LIMITS.MAX_CONTENT_SIZE },
+            originalPlain: { type: 'string' },
+            originalHtml: { type: 'string' },
+            metadata: {
+              type: 'object',
+              required: ['sourceUrl', 'title', 'timestamp'],
+              properties: {
+                sourceUrl: { type: 'string' },
+                title: { type: 'string' },
+                timestamp: { type: 'number' },
+              },
             },
           },
         },
       },
     },
-  }, saveItemHandler);
+    saveItemHandler
+  );
 
   // 获取项目列表
-  fastify.get('/items', {
-    schema: {
-      querystring: {
-        type: 'object',
-        properties: {
-          limit: { type: 'string', pattern: '^\\d+$' },
-          offset: { type: 'string', pattern: '^\\d+$' },
-        },
-      },
-    },
-  }, getItemsHandler);
-
-  // 获取单个项目
-  fastify.get('/items/:id', {
-    schema: {
-      params: {
-        type: 'object',
-        required: ['id'],
-        properties: {
-          id: { type: 'string' },
-        },
-      },
-    },
-  }, getItemHandler);
-
-  // 删除单个项目
-  fastify.delete('/items/:id', {
-    schema: {
-      params: {
-        type: 'object',
-        required: ['id'],
-        properties: {
-          id: { type: 'string' },
-        },
-      },
-    },
-  }, deleteItemHandler);
-
-  // 批量删除项目
-  fastify.delete('/items', {
-    schema: {
-      body: {
-        type: 'object',
-        required: ['ids'],
-        properties: {
-          ids: {
-            type: 'array',
-            items: { type: 'string' },
+  fastify.get(
+    '/items',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          properties: {
+            limit: { type: 'string', pattern: '^\\d+$' },
+            offset: { type: 'string', pattern: '^\\d+$' },
           },
         },
       },
     },
-  }, deleteItemsHandler);
+    getItemsHandler
+  );
+
+  // 获取单个项目
+  fastify.get(
+    '/items/:id',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    getItemHandler
+  );
+
+  // 删除单个项目
+  fastify.delete(
+    '/items/:id',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+      },
+    },
+    deleteItemHandler
+  );
+
+  // 批量删除项目
+  fastify.delete(
+    '/items',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['ids'],
+          properties: {
+            ids: {
+              type: 'array',
+              items: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    deleteItemsHandler
+  );
 }

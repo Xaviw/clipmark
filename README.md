@@ -1,102 +1,110 @@
 # ClipMark
 
-智能剪贴板转 Markdown 工具
+智能剪贴板转 Markdown 工具 - 自动将网页复制内容转换为 AI 友好的 Markdown 格式
 
-## 项目简介
+## 快速开始
 
-ClipMark 是一个 Chrome 浏览器扩展，用于将用户从网页中复制的内容自动转换为 AI 友好的 Markdown 格式，并通过 MCP (Model Context Protocol) 服务提供给 AI 工具使用。
+### 系统要求
 
-### 核心功能
+- Node.js >= 18.0.0
+- pnpm >= 8.0.0
+- Chrome 浏览器
 
-- 自动监听剪贴板复制事件
-- 智能转换 HTML 为 Markdown 格式
-- 支持腾讯文档等特殊网站的转换策略
-- 本地存储历史记录
-- MCP 服务接口供 AI 工具调用
+### 安装
 
-## 技术栈
+```bash
+# 安装依赖
+pnpm install
 
-- **语言**: TypeScript 5.x
-- **包管理**: pnpm (monorepo)
-- **构建工具**: Vite + CRXJS
-- **浏览器扩展**: Chrome Manifest V3
-- **MCP 协议**: @modelcontextprotocol/sdk
+# 构建所有包
+pnpm build
+
+# 启动 MCP 服务器
+pnpm start
+```
+
+### 加载扩展
+
+1. 打开 Chrome 浏览器，访问 `chrome://extensions/`
+2. 启用"开发者模式"
+3. 点击"加载已解压的扩展程序"
+4. 选择 `packages/extension/dist` 目录
+
+### 使用
+
+1. 在任何网页上复制内容（Ctrl/Cmd + C）
+2. 扩展自动将内容转换为 Markdown 格式
+3. 通过 MCP 工具在 Claude Code 等 AI 工具中使用
+
+## 包介绍
+
+### @clipmark/extension
+
+Chrome 浏览器扩展
+- 监听页面复制事件，捕获 HTML 和纯文本
+- 根据来源 URL 智能选择转换器
+- 支持本地存储和历史管理
+- 通过 HTTP API 同步到 MCP 服务器
+
+### @clipmark/mcp-server
+
+MCP 服务器
+- 提供 HTTP API（端口 37283）
+- 实现 MCP 协议（stdio）
+- 文件存储（`~/.clipmark/data.json`）
+- 支持健康检查、CRUD 操作
+
+### @clipmark/shared
+
+共享代码库
+- 类型定义（ClipItem、SaveItemRequest 等）
+- 转换器系统（支持扩展自定义转换器）
+- 工具函数和常量配置
+
+## 常用命令
+
+```bash
+# 开发模式
+pnpm dev
+
+# 构建生产版本
+pnpm build
+
+# 启动 MCP 服务器
+pnpm start
+
+# 代码检查
+pnpm lint
+pnpm format
+pnpm type-check
+```
 
 ## 项目结构
 
 ```
 clipmark/
 ├── packages/
-│   ├── extension/          # Chrome 扩展
-│   ├── mcp-server/         # MCP 服务
-│   └── shared/             # 共享代码（类型、工具函数、常量）
-├── pnpm-workspace.yaml
-├── package.json
-└── tsconfig.json
+│   ├── extension/      # Chrome 扩展
+│   ├── mcp-server/     # MCP 服务器
+│   └── shared/         # 共享代码
+├── CLAUDE.md           # Claude Code 项目指南
+└── README.md           # 本文件
 ```
 
-## 开发
+## 配置 MCP 客户端
 
-### 安装依赖
+在 `~/.config/claude/claude_desktop_config.json` 中添加：
 
-```bash
-pnpm install
+```json
+{
+  "mcpServers": {
+    "clipmark": {
+      "command": "node",
+      "args": ["/path/to/clipmark/packages/mcp-server/dist/index.js"]
+    }
+  }
+}
 ```
-
-### 开发模式
-
-```bash
-# 开发所有包
-pnpm dev
-
-# 开发特定包
-pnpm --filter @clipmark/extension dev
-pnpm --filter @clipmark/mcp-server dev
-pnpm --filter @clipmark/shared dev
-```
-
-### 构建
-
-```bash
-# 构建所有包
-pnpm build
-
-# 构建特定包
-pnpm --filter @clipmark/extension build
-pnpm --filter @clipmark/mcp-server build
-pnpm --filter @clipmark/shared build
-```
-
-### 代码检查
-
-```bash
-# 运行 ESLint
-pnpm lint
-
-# 格式化代码
-pnpm format
-
-# 类型检查
-pnpm type-check
-```
-
-## 包说明
-
-### @clipmark/extension
-
-Chrome 浏览器扩展，负责监听剪贴板事件和内容转换。
-
-### @clipmark/mcp-server
-
-MCP 服务，提供 HTTP API 和 MCP 协议接口。
-
-### @clipmark/shared
-
-共享代码，包含类型定义、工具函数和转换策略。
-
-## 开发计划
-
-详细的开发计划请参考 [TODO.md](./TODO.md)
 
 ## 许可证
 

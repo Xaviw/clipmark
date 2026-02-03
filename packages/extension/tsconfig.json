@@ -4,14 +4,12 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "composite": true,
-    "lib": ["ES2020", "WebWorker"],
+    "lib": ["ES2020", "WebWorker", "DOM"],
     "types": ["chrome"],
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"],
-  "references": [
-    { "path": "../shared" }
-  ]
+  "references": [{ "path": "../shared" }]
 }

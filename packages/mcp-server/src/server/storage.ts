@@ -4,7 +4,6 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import * as os from 'os';
 import type { ClipItem } from '@clipmark/shared';
 import type { SaveItemRequest } from '@clipmark/shared';
 import { generateId, now } from '@clipmark/shared';
@@ -73,7 +72,8 @@ export class FileStorage {
   async saveItem(request: SaveItemRequest): Promise<ClipItem> {
     this.ensureInitialized();
 
-    const id = generateId();
+    // 如果请求中提供了 ID，使用它；否则生成新的
+    const id = request.id || generateId();
     const createdAt = now();
     const item: ClipItem = {
       id,
@@ -99,6 +99,10 @@ export class FileStorage {
    */
   async getItem(id: string): Promise<ClipItem | null> {
     this.ensureInitialized();
+
+    // 重新从文件加载数据，确保获取最新的数据
+    await this.loadFromFile();
+
     return this.memoryCache.get(id) || null;
   }
 
@@ -107,16 +111,28 @@ export class FileStorage {
    */
   async getAllItems(): Promise<ClipItem[]> {
     this.ensureInitialized();
+
+    // 重新从文件加载数据，确保获取最新的数据
+    await this.loadFromFile();
+
     return Array.from(this.memoryCache.values()).sort((a, b) => b.createdAt - a.createdAt);
   }
 
   /**
    * 获取项目列表（分页）
    */
-  async getItems(limit: number = 10, offset: number = 0): Promise<{ items: ClipItem[]; total: number }> {
+  async getItems(
+    limit: number = 10,
+    offset: number = 0
+  ): Promise<{ items: ClipItem[]; total: number }> {
     this.ensureInitialized();
 
-    const allItems = Array.from(this.memoryCache.values()).sort((a, b) => b.createdAt - a.createdAt);
+    // 重新从文件加载数据，确保获取最新的数据
+    await this.loadFromFile();
+
+    const allItems = Array.from(this.memoryCache.values()).sort(
+      (a, b) => b.createdAt - a.createdAt
+    );
     const total = allItems.length;
     const items = allItems.slice(offset, offset + limit);
 
@@ -163,12 +179,27 @@ export class FileStorage {
   async getLatestItem(): Promise<ClipItem | null> {
     this.ensureInitialized();
 
+    // 重新从文件加载数据，确保获取最新的数据
+    // 这解决了多进程场景下数据不同步的问题
+    await this.loadFromFile();
+
     const items = Array.from(this.memoryCache.values());
     if (items.length === 0) {
       return null;
     }
 
-    return items.sort((a, b) => b.createdAt - a.createdAt)[0];
+    // 按创建时间降序排序，如果时间相同则按 ID 字典序倒序排序
+    // 这确保了即使时间戳相同，也能稳定地返回最新添加的记录
+    // 由于 UUID 以字母开头，数字 ID 以数字开头，UUID 在字典序中会排在数字后面
+    // 所以我们使用倒序字典序，确保数字 ID（新格式）优先于 UUID（旧格式）被返回
+    return items.sort((a, b) => {
+      if (b.createdAt !== a.createdAt) {
+        return b.createdAt - a.createdAt;
+      }
+      // 时间戳相同时，按 ID 字典序倒序排序
+      // 这样数字 ID（如 "6966"）会排在 UUID（如 "0b1a69aa-..."）前面
+      return a.id.localeCompare(b.id);
+    })[0];
   }
 
   /**
@@ -236,12 +267,9 @@ export class FileStorage {
   /**
    * 处理损坏的数据文件
    */
-  private async handleCorruptedData(error: unknown): Promise<void> {
+  private async handleCorruptedData(_error: unknown): Promise<void> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupFile = path.join(
-      this.dataDir,
-      `${BACKUP_FILENAME_TEMPLATE}.${timestamp}.backup`
-    );
+    const backupFile = path.join(this.dataDir, `${BACKUP_FILENAME_TEMPLATE}.${timestamp}.backup`);
 
     try {
       // 尝试备份损坏的文件
