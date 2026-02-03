@@ -1,17 +1,14 @@
 import TurndownService from 'turndown';
 import { parseHTML } from 'linkedom';
 import { ContentConverter, ConversionContext } from './base';
-import { PLACEHOLDER_TEMPLATES } from '../constants';
 
 /**
  * 腾讯文档转换器
- * 专门处理腾讯文档(docs.qq.com, doc.weixin.qq.com)的HTML结构
- * 使用linkedom模拟DOM环境以支持service worker
+ * 专门处理腾讯文档的HTML结构
  */
 export class TencentConverter implements ContentConverter {
   readonly name = 'tencent';
   private turndownService: TurndownService;
-  private imageCounter = 0;
 
   constructor() {
     this.turndownService = new TurndownService({
@@ -35,12 +32,6 @@ export class TencentConverter implements ContentConverter {
    * 将HTML转换为Markdown
    */
   async convert(html: string, url: string): Promise<string> {
-    console.log('[TencentConverter] 开始转换, URL:', url);
-    console.log('[TencentConverter] HTML 长度:', html.length);
-
-    // 重置计数器
-    this.imageCounter = 0;
-
     const context: ConversionContext = {
       url,
       imageCounter: 0,
@@ -49,11 +40,17 @@ export class TencentConverter implements ContentConverter {
       placeholders: [],
     };
 
-    // 清理HTML
+    // 清理HTML - 仅保留 div.document > div.section
     const cleanedHtml = this.cleanHtml(html);
 
     // 使用 linkedom 创建虚拟 DOM 环境
     const doc = parseHTML(`<!DOCTYPE html><html><body>${cleanedHtml}</body></html>`);
+
+    // 清除空标签
+    this.removeEmptyTags(doc.document.body);
+
+    // 将 context 注入到 turndownService 的 options 中
+    (this.turndownService as any).options.__conversionContext__ = context;
 
     // 转换为Markdown
     let markdown = this.turndownService.turndown(doc.document.body);
@@ -61,538 +58,446 @@ export class TencentConverter implements ContentConverter {
     // 清理多余的空白
     markdown = this.normalizeMarkdown(markdown);
 
-    console.log('[TencentConverter] 转换完成, Markdown 长度:', markdown.length);
-    console.log('[TencentConverter] Markdown 预览:', markdown.substring(0, 300));
+    // 添加占位符说明
+    const footer = this.generateFooter(context);
+    if (footer) {
+      markdown += footer;
+    }
 
     return markdown;
-  }
-
-  /**
-   * 获取节点属性
-   */
-  private getAttribute(node: any, name: string): string {
-    if (!node) return '';
-    try {
-      return node.getAttribute(name) || '';
-    } catch {
-      return '';
-    }
-  }
-
-  /**
-   * 解析style属性，转换为对象
-   */
-  private parseStyle(style: string): Record<string, string> {
-    const result: Record<string, string> = {};
-    if (!style) return result;
-
-    style.split(';').forEach((rule) => {
-      const parts = rule.split(':');
-      if (parts.length >= 2) {
-        const property = parts[0].trim().toLowerCase();
-        const value = parts.slice(1).join(':').trim().toLowerCase();
-        if (property && value) {
-          result[property] = value;
-        }
-      }
-    });
-
-    return result;
   }
 
   /**
    * 设置自定义转换规则
    */
   private setupRules(): void {
-    // 规则优先级：先处理特定元素，再处理通用元素
+    // 标题处理
+    this.setupHeadingRules();
+    // 文本格式处理
+    this.setupTextFormatRules();
+    // 列表处理
+    this.setupListRules();
+    // 引用块和高亮块处理
+    this.setupQuoteRules();
+    // 表格处理
+    this.setupTableRules();
+    // 代码块处理
+    this.setupCodeBlockRules();
+    // 图片处理
+    this.setupImageRules();
+    // 链接处理
+    this.setupLinkRules();
+    // 分隔线处理
+    this.setupHorizontalRuleRules();
+  }
 
-    // 移除所有空标签（<o:p></o:p>等） - 最高优先级
-    this.turndownService.addRule('removeEmptyTags', {
-      filter: (node) => {
-        const nodeName = node.nodeName || '';
-        const textContent = node.textContent || '';
-        const childNodes = node.childNodes || [];
-        return (
-          (nodeName === 'O:P' || nodeName === 'SPAN' || nodeName === 'FONT') &&
-          textContent.trim() === '' &&
-          childNodes.length === 0
-        );
-      },
-      replacement: () => '',
-    });
-
-    // 处理列表 - 在段落处理之前
-    this.turndownService.addRule('tencentLists', {
-      filter: (node) => {
-        const nodeName = node.nodeName || '';
-        if (nodeName !== 'P') return false;
-
-        const style = this.getAttribute(node, 'style');
-
-        // 检查是否有 mso-list 样式
-        if (style.includes('mso-list:')) return true;
-
-        // 检查 classList 是否包含 MsoNormal
-        const className = node.className || '';
-        if (className.includes('MsoNormal')) return true;
-
-        // 检查是否包含列表标记符号
-        const text = node.textContent || '';
-        if (text.match(/^[\u00B7\u2022\u25CB\u25A0\u25AA●]\s/) || text.match(/^\d+\.\s/)) {
-          return true;
-        }
-
-        return false;
-      },
-      replacement: (_content, node) => {
-        const styleStr = this.getAttribute(node, 'style');
-        const styleObj = this.parseStyle(styleStr);
-        const msoList = styleObj['mso-list'] || '';
-
-        // 获取文本内容，移除列表标记符号
-        let text = node.textContent || '';
-
-        // 检测列表类型
-        // 无序列表：l0, l2, l4... 或检查是否有Wingdings字体的●符号
-        const isUnordered =
-          msoList.includes('l0 level') ||
-          msoList.includes('l2 level') ||
-          msoList.includes('l4 level') ||
-          msoList.includes('l6 level') ||
-          msoList.includes('l8 level') ||
-          text.match(/^[\u00B7\u2022\u25CB\u25A0\u25AA●]\s/);
-
-        // 复选框列表：使用 Wingdings 字体的  符号
-        const isCheckbox = text.includes('\uf0ae') || text.includes('');
-
-        // 有序列表：l1, l3, l5...
-        const isOrdered =
-          msoList.includes('l1 level') ||
-          msoList.includes('l3 level') ||
-          msoList.includes('l5 level') ||
-          msoList.includes('l7 level') ||
-          msoList.includes('l9 level') ||
-          text.match(/^\d+\.\s/);
-
-        // 清理文本：移除开头的列表标记
-        text = text.replace(/^[\u00B7\u2022\u25CB\u25A0\u25AA●]\s*/, ''); // 无序列表标记
-        text = text.replace(/^\d+\.\s*/, ''); // 有序列表标记
-        text = text.replace(/[\uf0ae]\s*/, ''); // 复选框标记
-        text = text.replace(/^\s+|\s+$/g, ''); // 去除首尾空格
-
-        if (isCheckbox) {
-          return `- [ ] ${text}\n`;
-        }
-
-        if (isUnordered) {
-          return `- ${text}\n`;
-        }
-
-        if (isOrdered) {
-          // 需要提取实际的序号，这里简化处理
-          // 在实际使用中，turndown会处理嵌套结构
-          return `1. ${text}\n`;
-        }
-
-        return `${text}\n`;
-      },
-    });
-
-    // 处理引用块（左边框样式） - 在段落处理之前
-    this.turndownService.addRule('blockquote', {
-      filter: (node) => {
-        const nodeName = node.nodeName || '';
-        if (nodeName !== 'P') return false;
-
-        const style = this.getAttribute(node, 'style');
-        // 检查是否有左边框且不是表格单元格
-        // 格式：border-left: #1e6fff 1.5pt 或 mso-border-left-alt: #1e6fff 1.5pt
-        return (
-          (style.includes('border-left:') && style.includes('#1e6fff')) ||
-          style.includes('mso-border-left-alt:')
-        );
-      },
-      replacement: (_content, node) => {
-        const text = (node.textContent || '').trim();
-        return `> ${text}\n`;
-      },
-    });
-
-    // 处理高亮块
-    this.turndownService.addRule('highlightBlock', {
-      filter: (node) => {
-        const nodeName = node.nodeName || '';
-        if (nodeName !== 'DIV') return false;
-
-        return (
-          this.getAttribute(node, 'data-bg-color') !== '' ||
-          this.getAttribute(node, 'data-border-color') !== ''
-        );
-      },
-      replacement: (_content, node) => {
-        const text = (node.textContent || '').trim();
-        return `> ${text}\n`;
-      },
-    });
-
-    // 处理标题（腾讯文档使用h1-h6标签）
+  /**
+   * 标题处理规则
+   */
+  private setupHeadingRules(): void {
+    // 处理标题 h1-h6
     this.turndownService.addRule('tencentHeadings', {
-      filter: (node) => {
-        const nodeName = node.nodeName || '';
-        if (!nodeName.startsWith('H')) return false;
-        const level = parseInt(nodeName[1]);
-        return !isNaN(level) && level >= 1 && level <= 6;
-      },
+      filter: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
       replacement: (content, node) => {
-        const level = parseInt((node.nodeName || '')[1]);
-        const prefix = '#'.repeat(level);
-        return `\n\n${prefix} ${content}\n\n`;
-      },
-    });
+        const hLevel = parseInt(node.nodeName.charAt(1));
+        const hPrefix = '#'.repeat(hLevel);
 
-    // 处理文本格式（内联样式） - 需要在段落处理之前
-    this.turndownService.addRule('inlineStyles', {
-      filter: (node) => {
-        const nodeName = node.nodeName || '';
-        // 只处理非标题内的span
-        if (nodeName !== 'SPAN') return false;
-        if (this.getAttribute(node, 'style') === '') return false;
+        // 克隆节点以处理内容
+        const clone = node.cloneNode(true) as Element;
 
-        // 检查父元素是否是标题，如果是则跳过（让标题规则处理）
-        let parent = node.parentNode;
-        while (parent) {
-          const parentName = parent.nodeName || '';
-          if (parentName.startsWith('H') && parentName.length === 2) {
-            return false; // 在标题内，跳过
-          }
-          if (parentName === 'BODY') break;
-          parent = parent.parentNode;
-        }
+        // 移除 style 含有 mso-list: Ignore 的列表元素
+        const ignoreElements = clone.querySelectorAll('[style*="mso-list"][style*="Ignore"]');
+        ignoreElements.forEach((el) => el.remove());
 
-        return true;
-      },
-      replacement: (content, node) => {
-        const styleStr = this.getAttribute(node, 'style');
-        const styleObj = this.parseStyle(styleStr);
+        // 获取清理后的文本内容
+        const cleanContent = clone.textContent?.trim() || '';
 
-        let formatted = content;
-
-        // 加粗 - 检查 font-weight: bold 或 700
-        const fontWeight = styleObj['font-weight'];
-        if (fontWeight === 'bold' || fontWeight === '700' || fontWeight === 'bolder') {
-          formatted = `**${formatted}**`;
-        }
-
-        // 斜体
-        if (styleObj['font-style'] === 'italic') {
-          formatted = `*${formatted}*`;
-        }
-
-        // 删除线 - text-decoration可能包含多个值
-        const textDecoration = styleObj['text-decoration'] || '';
-        if (textDecoration.includes('line-through')) {
-          formatted = `~~${formatted}~~`;
-        }
-
-        // 上标和下标 - 使用HTML标签保留
-        const verticalAlign = styleObj['vertical-align'];
-        if (verticalAlign === 'super') {
-          formatted = `<sup>${formatted}</sup>`;
-        } else if (verticalAlign === 'sub') {
-          formatted = `<sub>${formatted}</sub>`;
-        }
-
-        return formatted;
-      },
-    });
-
-    // 处理代码块
-    this.turndownService.addRule('tencentCodeBlock', {
-      filter: (node) => {
-        const nodeName = node.nodeName || '';
-        if (nodeName !== 'PRE') return false;
-
-        const code = node.querySelector ? node.querySelector('code') : null;
-        return code !== null;
-      },
-      replacement: (_content, node) => {
-        const code = node.querySelector ? node.querySelector('code') : null;
-        if (!code) return `\n\`\`\`\n${_content}\n\`\`\`\n`;
-
-        // 检测语言
-        let lang = '';
-        const langAttr = this.getAttribute(code, 'data-tco-code-type');
-        if (langAttr) {
-          lang = langAttr;
-        } else if (code.classList) {
-          const langClass = Array.from(code.classList).find((cls: string) =>
-            cls.startsWith('language-')
-          );
-          if (langClass) {
-            lang = langClass.replace('language-', '');
-          }
-        }
-
-        const codeContent = code.textContent || '';
-        return `\n\`\`\`${lang}\n${codeContent}\n\`\`\`\n`;
-      },
-    });
-
-    // 处理分隔线
-    this.turndownService.addRule('tencentHr', {
-      filter: (node) => {
-        const nodeName = node.nodeName || '';
-        if (nodeName !== 'P' && nodeName !== 'DIV') return false;
-
-        const style = this.getAttribute(node, 'style');
-        return (
-          style.includes('border-bottom:') &&
-          (style.includes('solid') || style.includes('dashed'))
-        );
-      },
-      replacement: () => {
-        return '\n\n---\n\n';
-      },
-    });
-
-    // 处理图片
-    this.turndownService.addRule('tencentImages', {
-      filter: (node) => {
-        return (node.nodeName || '') === 'IMG';
-      },
-      replacement: (_content, node) => {
-        const alt = this.getAttribute(node, 'alt') || '未命名图片';
-        const src = this.getAttribute(node, 'src');
-
-        // Base64或Data URL图片
-        if (this.isDataUrl(src)) {
-          return `图片：${PLACEHOLDER_TEMPLATES.IMAGE(alt, ++this.imageCounter)}`;
-        }
-
-        // URL链接图片
-        return `![${alt}](${src})`;
-      },
-    });
-
-    // 处理链接
-    this.turndownService.addRule('tencentLinks', {
-      filter: (node) => {
-        return (node.nodeName || '') === 'A';
-      },
-      replacement: (content, node) => {
-        const href = this.getAttribute(node, 'href');
-
-        // 如果链接文本就是URL，直接返回URL
-        if (content.trim() === href || this.isValidUrl(content.trim())) {
-          return content;
-        }
-
-        return `[${content}](${href})`;
-      },
-    });
-
-    // 处理表格（简单表格转Markdown，复杂表格保留HTML）
-    this.turndownService.addRule('tencentTable', {
-      filter: (node) => {
-        return (node.nodeName || '') === 'TABLE';
-      },
-      replacement: (_content, node) => {
-        // 检查是否有真正的合并单元格（colspan或rowspan值大于1）
-        const hasMergedCells = this.hasMergedCells(node);
-
-        if (hasMergedCells) {
-          // 复杂表格：保留精简HTML
-          return this.simplifyTable(node);
-        }
-
-        // 简单表格：转换为Markdown
-        return this.convertSimpleTable(node);
-      },
-    });
-
-    // 移除腾讯文档特有的元数据块
-    this.turndownService.addRule('tencentMetadata', {
-      filter: (node) => {
-        const nodeName = node.nodeName || '';
-        return nodeName === 'DIV' && this.getAttribute(node, 'tdoc-data-src') !== '';
-      },
-      replacement: () => '',
-    });
-
-    // 处理普通段落 - 最后添加，确保优先级最低
-    // 但需要在filter中排除已被特定规则处理的元素
-    this.turndownService.addRule('paragraph', {
-      filter: (node) => {
-        const nodeName = node.nodeName || '';
-        if (nodeName !== 'P') return false;
-
-        const styleStr = this.getAttribute(node, 'style');
-        const styleObj = this.parseStyle(styleStr);
-        const className = node.className || '';
-
-        // 排除列表
-        if (styleObj['mso-list'] || className.includes('MsoNormal')) {
-          return false;
-        }
-
-        // 排除引用块
-        if (
-          styleStr.includes('border-left:') &&
-          !styleStr.includes('border-left: none') &&
-          styleStr.includes('#1e6fff')
-        ) {
-          return false;
-        }
-
-        // 排除包含列表标记的段落
-        const text = node.textContent || '';
-        if (text.match(/^[\u00B7\u2022\u25CB\u25A0\u25AA●]\s/) || text.match(/^\d+\.\s/)) {
-          return false;
-        }
-
-        return true;
-      },
-      replacement: (content, node) => {
-        // 普通段落
-        const text = content.trim();
-        if (!text) return '';
-
-        return `${text}\n`;
+        return cleanContent ? `\n\n${hPrefix} ${cleanContent}\n\n` : '';
       },
     });
   }
 
   /**
-   * 检查表格是否有真正的合并单元格（colspan或rowspan值大于1）
+   * 文本格式处理规则
    */
-  private hasMergedCells(table: any): boolean {
-    if (!table.querySelectorAll) return false;
+  private setupTextFormatRules(): void {
+    // 处理加粗
+    this.turndownService.addRule('tencentBold', {
+      filter: (node) => {
+        if (node.nodeName !== 'SPAN') return false;
+        const style = (node as HTMLElement).getAttribute('style') || '';
+        return style.includes('font-weight') && style.includes('bold');
+      },
+      replacement: (content) => {
+        return content ? `**${content}**` : '';
+      },
+    });
 
-    const cells = table.querySelectorAll('td, th');
-    for (let i = 0; i < cells.length; i++) {
-      const cell = cells[i];
-      const colspan = parseInt(this.getAttribute(cell, 'colspan')) || 1;
-      const rowspan = parseInt(this.getAttribute(cell, 'rowspan')) || 1;
+    // 处理斜体
+    this.turndownService.addRule('tencentItalic', {
+      filter: (node) => {
+        if (node.nodeName !== 'SPAN') return false;
+        const style = (node as HTMLElement).getAttribute('style') || '';
+        return style.includes('font-style') && style.includes('italic');
+      },
+      replacement: (content) => {
+        return content ? `*${content}*` : '';
+      },
+    });
 
-      if (colspan > 1 || rowspan > 1) {
-        return true;
+    // 处理删除线
+    this.turndownService.addRule('tencentStrikethrough', {
+      filter: (node) => {
+        if (node.nodeName !== 'SPAN') return false;
+        const style = (node as HTMLElement).getAttribute('style') || '';
+        return style.includes('text-decoration') && style.includes('line-through');
+      },
+      replacement: (content) => {
+        return content ? `~~${content}~~` : '';
+      },
+    });
+
+    // 处理上标
+    this.turndownService.addRule('tencentSuperscript', {
+      filter: (node) => {
+        if (node.nodeName !== 'SPAN') return false;
+        const style = (node as HTMLElement).getAttribute('style') || '';
+        return style.includes('vertical-align') && style.includes('super');
+      },
+      replacement: (content) => {
+        return content ? `<sup>${content}</sup>` : '';
+      },
+    });
+
+    // 处理下标
+    this.turndownService.addRule('tencentSubscript', {
+      filter: (node) => {
+        if (node.nodeName !== 'SPAN') return false;
+        const style = (node as HTMLElement).getAttribute('style') || '';
+        return style.includes('vertical-align') && style.includes('sub');
+      },
+      replacement: (content) => {
+        return content ? `<sub>${content}</sub>` : '';
+      },
+    });
+  }
+
+  /**
+   * 引用块和高亮块处理规则
+   */
+  private setupQuoteRules(): void {
+    // 处理引用块（mso-border-left-alt）
+    this.turndownService.addRule('tencentQuote', {
+      filter: (node) => {
+        if (node.nodeName !== 'P') return false;
+        const style = (node as HTMLElement).getAttribute('style') || '';
+        return style.includes('mso-border-left-alt');
+      },
+      replacement: (content) => {
+        if (!content) return '';
+        // 将内容按行分割，每行前面加上 >，空行用 > 表示
+        const lines = content.trim().split('\n');
+        const quotedLines = lines.map(line => {
+          const trimmed = line.trim();
+          return trimmed ? `> ${trimmed}` : '>';
+        });
+        return '\n' + quotedLines.join('\n') + '\n\n';
+      },
+    });
+
+    // 处理高亮块（data-bg-color）
+    this.turndownService.addRule('tencentHighlight', {
+      filter: (node) => {
+        if (node.nodeName !== 'DIV') return false;
+        const hasBgColor = (node as HTMLElement).hasAttribute('data-bg-color');
+        const hasBorderColor = (node as HTMLElement).hasAttribute('data-border-color');
+        return hasBgColor || hasBorderColor;
+      },
+      replacement: (content) => {
+        if (!content) return '';
+        // 将内容按行分割，每行前面加上 >，空行用 > 表示
+        const lines = content.trim().split('\n');
+        const quotedLines = lines.map(line => {
+          const trimmed = line.trim();
+          return trimmed ? `> ${trimmed}` : '>';
+        });
+        return '\n' + quotedLines.join('\n') + '\n\n';
+      },
+    });
+  }
+
+  /**
+   * 列表处理规则
+   */
+  private setupListRules(): void {
+    // 处理腾讯文档的列表
+    this.turndownService.addRule('tencentList', {
+      filter: (node) => {
+        if (node.nodeName !== 'P') return false;
+        const style = (node as HTMLElement).getAttribute('style') || '';
+        return style.includes('mso-list:') && style.includes('level');
+      },
+      replacement: (content, node) => {
+        const style = (node as HTMLElement).getAttribute('style') || '';
+
+        // 提取 level 信息
+        const levelMatch = style.match(/level(\d+)/);
+        const level = levelMatch ? parseInt(levelMatch[1]) : 1;
+
+        // 计算缩进（level从1开始，每级2个空格）
+        const indent = '  '.repeat(level - 1);
+
+        // 克隆节点以处理内容
+        const clone = node.cloneNode(true) as Element;
+
+        // 移除 style 含有 mso-list: Ignore 的标识符
+        const ignoreElements = clone.querySelectorAll('[style*="mso-list"][style*="Ignore"]');
+        ignoreElements.forEach((el) => el.remove());
+
+        // 获取清理后的文本内容
+        const cleanContent = clone.textContent?.trim() || '';
+
+        if (!cleanContent) return '';
+
+        // 检查是否是复选框（包含 \uf0ae 字符）
+        const isCheckbox = cleanContent.includes('\uf0ae');
+
+        if (isCheckbox) {
+          // 移除复选框字符
+          const text = cleanContent.replace(/\uf0ae/g, '').trim();
+          return `${indent}- [ ] ${text}\n`;
+        }
+
+        // 无序列表（腾讯文档中所有列表都转为无序列表）
+        return `${indent}- ${cleanContent}\n`;
+      },
+    });
+  }
+
+  /**
+   * 表格处理规则
+   */
+  private setupTableRules(): void {
+    // 处理所有表格
+    this.turndownService.addRule('tencentTable', {
+      filter: ['table'],
+      replacement: (_content, node) => {
+        const table = node as HTMLTableElement;
+
+        // 检查是否有真正的合并单元格(colspan > 1 或 rowspan > 1)
+        const hasComplexCells = this.hasComplexCells(table);
+
+        if (hasComplexCells) {
+          // 复杂表格：保留精简HTML
+          return this.simplifyTable(table);
+        } else {
+          // 简单表格：转换为Markdown
+          return this.convertSimpleTable(table);
+        }
+      },
+    });
+  }
+
+  /**
+   * 代码块处理规则
+   */
+  private setupCodeBlockRules(): void {
+    this.turndownService.addRule('tencentCodeBlock', {
+      filter: (node) => {
+        return node.nodeName === 'PRE' && node.querySelector('code') !== null;
+      },
+      replacement: (_content, node) => {
+        const codeElement = node.querySelector('code');
+        if (!codeElement) return '';
+
+        const language = codeElement.getAttribute('data-tco-code-type') || '';
+
+        // 处理代码内容，保留换行
+        let code = '';
+        const processNode = (n: Node) => {
+          if (n.nodeType === 3) {
+            // 文本节点
+            code += n.textContent || '';
+          } else if (n.nodeName === 'BR') {
+            // BR 标签转换为换行
+            code += '\n';
+          } else if (n.childNodes) {
+            // 递归处理子节点
+            n.childNodes.forEach(processNode);
+          }
+        };
+
+        codeElement.childNodes.forEach(processNode);
+
+        return `\n\`\`\`${language}\n${code}\n\`\`\`\n\n`;
+      },
+    });
+  }
+
+  /**
+   * 图片处理规则
+   */
+  private setupImageRules(): void {
+    this.turndownService.addRule('tencentImages', {
+      filter: (node) => {
+        return node.nodeName === 'IMG';
+      },
+      replacement: (_content, node, options) => {
+        const img = node as HTMLImageElement;
+        const src = img.getAttribute('src') || '';
+
+        // 获取上下文
+        const context = (options as any).__conversionContext__ as ConversionContext;
+        if (!context) return '';
+
+        context.imageCounter++;
+
+        // Base64/DataURL/SVG 图片使用占位符
+        if (this.isDataUrl(src) || src.startsWith('<svg')) {
+          return `[图片占位符: ${context.imageCounter}]`;
+        }
+
+        // URL 链接图片
+        return `![图片${context.imageCounter}](${src})`;
+      },
+    });
+  }
+
+  /**
+   * 链接处理规则
+   */
+  private setupLinkRules(): void {
+    this.turndownService.addRule('tencentLinks', {
+      filter: (node) => {
+        return node.nodeName === 'A' && !!(node as HTMLAnchorElement).getAttribute('href');
+      },
+      replacement: (content, node, options) => {
+        const anchor = node as HTMLAnchorElement;
+        const href = anchor.getAttribute('href') || '';
+        const dataFieldCode = anchor.getAttribute('data-field-code') || '';
+
+        // 获取上下文
+        const context = (options as any).__conversionContext__ as ConversionContext;
+
+        // 带 data-field-code="HYPERLINK 的链接
+        if (dataFieldCode.includes('HYPERLINK')) {
+          if (context) context.otherCounter++;
+          const index = context ? context.otherCounter : 1;
+          return `[腾讯文档内容块占位符：${index}](${href})`;
+        }
+
+        // 标准链接
+        return `[${content}](${href})`;
+      },
+    });
+  }
+
+  /**
+   * 分隔线处理规则
+   */
+  private setupHorizontalRuleRules(): void {
+    this.turndownService.addRule('tencentHorizontalRule', {
+      filter: (node) => {
+        if (node.nodeName !== 'P') return false;
+        const className = (node as HTMLElement).getAttribute('class') || '';
+        return className.includes('horizontal-splitline');
+      },
+      replacement: () => {
+        return '\n\n---\n\n';
+      },
+    });
+  }
+
+  /**
+   * 清理HTML - 仅保留 div.document > div.section 节点
+   */
+  private cleanHtml(html: string): string {
+    // 移除script和style标签
+    let cleaned = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+    cleaned = cleaned.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+    cleaned = cleaned.replace(/<!--[\s\S]*?-->/g, '');
+
+    // 解析HTML以提取 div.document > div.section
+    const doc = parseHTML(`<!DOCTYPE html><html><body>${cleaned}</body></html>`);
+    const documentDiv = doc.document.querySelector('div.document');
+
+    if (documentDiv) {
+      const sections = documentDiv.querySelectorAll(':scope > div.section');
+      if (sections.length > 0) {
+        const sectionsHtml = Array.from(sections)
+          .map((section) => section.outerHTML)
+          .join('');
+        return sectionsHtml;
       }
+    }
+
+    // 如果没有找到特定结构,返回清理后的HTML
+    return cleaned;
+  }
+
+  /**
+   * 清除空标签
+   * 递归清理没有实际内容的标签
+   */
+  private removeEmptyTags(element: Element): void {
+    // 需要避开的标签(分割线和图片)
+    const skipTags = ['IMG', 'HR', 'BR'];
+
+    const children = Array.from(element.children);
+
+    // 先递归处理子元素
+    for (const child of children) {
+      this.removeEmptyTags(child);
+    }
+
+    // 再次检查子元素,移除空标签
+    const updatedChildren = Array.from(element.children);
+    for (const child of updatedChildren) {
+      if (skipTags.includes(child.nodeName)) {
+        continue;
+      }
+
+      // 检查是否为空标签
+      if (this.isEmptyElement(child)) {
+        child.remove();
+      }
+    }
+  }
+
+  /**
+   * 判断元素是否为空
+   */
+  private isEmptyElement(element: Element): boolean {
+    // 特殊标签不视为空
+    const nonEmptyTags = ['IMG', 'HR', 'BR'];
+    if (nonEmptyTags.includes(element.nodeName)) {
+      return false;
+    }
+
+    // 检查文本内容
+    const text = element.textContent || '';
+    // 移除空白字符、换行符、零宽字符等
+    const cleanText = text.replace(/[\s\n\r\t\u200B-\u200D\uFEFF]/g, '');
+
+    // 如果没有文本内容且没有非空子元素,则为空
+    if (cleanText.length === 0) {
+      const hasNonEmptyChildren = Array.from(element.children).some(
+        (child) => !this.isEmptyElement(child)
+      );
+      return !hasNonEmptyChildren;
     }
 
     return false;
   }
 
   /**
-   * 转换简单表格为Markdown
-   */
-  private convertSimpleTable(table: any): string {
-    if (!table.querySelectorAll) return '';
-
-    const rows = Array.from(table.querySelectorAll('tr'));
-    if (rows.length === 0) return '';
-
-    let markdown = '\n';
-
-    rows.forEach((row: any, rowIndex: number) => {
-      if (!row.querySelectorAll) return;
-
-      const cells = Array.from(row.querySelectorAll('td, th'));
-      const rowText = '|' + cells.map((cell: any) => ` ${(cell.textContent || '').trim()} |`).join('');
-
-      markdown += rowText + '\n';
-
-      // 添加分隔行（表头后）
-      if (rowIndex === 0) {
-        const separator = '|' + cells.map(() => ' --- |').join('');
-        markdown += separator + '\n';
-      }
-    });
-
-    markdown += '\n';
-    return markdown;
-  }
-
-  /**
-   * 简化复杂表格（保留HTML）
-   */
-  private simplifyTable(table: any): string {
-    if (!table.cloneNode) return '\n<table></table>\n';
-
-    const clone = table.cloneNode(true);
-
-    // 首先移除 table 标签本身的 style 属性
-    if (clone.removeAttribute) {
-      clone.removeAttribute('style');
-      clone.removeAttribute('class');
-    }
-
-    // 移除所有样式相关属性，但保留rowspan和colspan
-    if (clone.querySelectorAll) {
-      const allElements = clone.querySelectorAll('*');
-      allElements.forEach((el: any) => {
-        // 移除所有属性
-        if (el.attributes) {
-          Array.from(el.attributes).forEach((attr: any) => {
-            const name = attr.name.toLowerCase();
-            // 只保留 colspan 和 rowspan
-            if (name !== 'colspan' && name !== 'rowspan' && el.removeAttribute) {
-              el.removeAttribute(attr.name);
-            }
-          });
-        }
-
-        // 移除空标签和 <o:p> 标签
-        if (el.childNodes) {
-          for (let i = el.childNodes.length - 1; i >= 0; i--) {
-            const child = el.childNodes[i];
-            if (child.nodeName === 'O:P' ||
-                (child.nodeName === 'SPAN' && child.textContent?.trim() === '' && child.childNodes.length === 0)) {
-              if (el.removeChild) {
-                el.removeChild(child);
-              }
-            }
-          }
-        }
-      });
-    }
-
-    // 清理后的HTML
-    let html = clone.outerHTML || '<table></table>';
-
-    // 移除多余的空白和换行
-    html = html.replace(/\s+/g, ' ').replace(/>\s+</g, '><').trim();
-
-    return '\n' + html + '\n';
-  }
-
-  /**
-   * 清理HTML内容
-   */
-  private cleanHtml(html: string): string {
-    // 移除script和style标签及其内容
-    let cleaned = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-    cleaned = cleaned.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
-
-    // 移除HTML注释
-    cleaned = cleaned.replace(/<!--[\s\S]*?-->/g, '');
-
-    // 移除腾讯文档特有的data-field-code等属性
-    cleaned = cleaned.replace(/\sdata-field-code="[^"]*"/g, '');
-    cleaned = cleaned.replace(/\sdata-font-family="[^"]*"/g, '');
-
-    return cleaned;
-  }
-
-  /**
    * 规范化Markdown内容
    */
   private normalizeMarkdown(markdown: string): string {
-    // 压缩多余的空行（最多保留2个连续空行）
+    // 压缩多余的空行
     let normalized = markdown.replace(/\n{3,}/g, '\n\n');
-
     // 去除首尾空白
     normalized = normalized.trim();
-
     return normalized;
   }
 
@@ -604,14 +509,100 @@ export class TencentConverter implements ContentConverter {
   }
 
   /**
-   * 检查是否是有效URL
+   * 检查表格是否有真正的合并单元格
    */
-  private isValidUrl(text: string): boolean {
-    try {
-      new URL(text);
-      return true;
-    } catch {
-      return false;
+  private hasComplexCells(table: HTMLTableElement): boolean {
+    const cells = table.querySelectorAll('td, th');
+    for (const cell of Array.from(cells)) {
+      const colspan = cell.getAttribute('colspan');
+      const rowspan = cell.getAttribute('rowspan');
+
+      // 检查 colspan 或 rowspan 是否大于 1
+      if ((colspan && parseInt(colspan) > 1) || (rowspan && parseInt(rowspan) > 1)) {
+        return true;
+      }
     }
+    return false;
+  }
+
+  /**
+   * 简化复杂表格（保留HTML，但移除样式属性）
+   */
+  private simplifyTable(table: HTMLTableElement): string {
+    const clone = table.cloneNode(true) as HTMLTableElement;
+
+    // 移除所有样式相关属性，但保留rowspan和colspan
+    const allElements = clone.querySelectorAll('*');
+    allElements.forEach((el) => {
+      Array.from(el.attributes).forEach((attr) => {
+        const name = attr.name.toLowerCase();
+        if (name !== 'rowspan' && name !== 'colspan') {
+          el.removeAttribute(name);
+        }
+      });
+    });
+
+    return '\n\n' + clone.outerHTML + '\n\n';
+  }
+
+  /**
+   * 转换简单表格为Markdown格式
+   */
+  private convertSimpleTable(table: HTMLTableElement): string {
+    const rows: string[][] = [];
+
+    // 提取所有行
+    const allRows = table.querySelectorAll('tr');
+
+    allRows.forEach((tr) => {
+      const cells: string[] = [];
+      const tdElements = tr.querySelectorAll('td, th');
+
+      tdElements.forEach((cell) => {
+        const text = (cell.textContent || '').trim();
+        cells.push(text);
+      });
+
+      if (cells.length > 0) {
+        rows.push(cells);
+      }
+    });
+
+    if (rows.length === 0) {
+      return '';
+    }
+
+    // 构建Markdown表格
+    let markdown = '\n\n';
+
+    // 第一行作为表头
+    const headerRow = rows[0];
+    markdown += '| ' + headerRow.join(' | ') + ' |\n';
+
+    // 分隔线
+    markdown += '| ' + headerRow.map(() => '---').join(' | ') + ' |\n';
+
+    // 数据行
+    for (let i = 1; i < rows.length; i++) {
+      markdown += '| ' + rows[i].join(' | ') + ' |\n';
+    }
+
+    markdown += '\n';
+
+    return markdown;
+  }
+
+  /**
+   * 生成占位符说明
+   */
+  private generateFooter(context: ConversionContext): string {
+    const hasPlaceholders =
+      context.imageCounter > 0 || context.iframeCounter > 0 || context.otherCounter > 0;
+
+    if (!hasPlaceholders) {
+      return '';
+    }
+
+    return `\n\n---\n\n**占位符说明：**\n\n- 优先从现有内容中进行理解\n- 如果确实需要补充占位符对应内容来补充理解，请提示用户提供 \`xxx占位符：序号\` 的内容`;
   }
 }

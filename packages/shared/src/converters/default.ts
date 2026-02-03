@@ -27,7 +27,7 @@ export class DefaultConverter implements ContentConverter {
    * 检查是否支持该URL
    * 默认转换器支持所有URL（作为降级方案）
    */
-  supports(url: string): boolean {
+  supports(_url: string): boolean {
     return true;
   }
 
@@ -35,8 +35,7 @@ export class DefaultConverter implements ContentConverter {
    * 将HTML转换为Markdown
    */
   async convert(html: string, url: string): Promise<string> {
-    console.log('[DefaultConverter] convert 开始');
-    console.log('[DefaultConverter] 原始 HTML 长度:', html.length);
+    console.log('[DefaultConverter] 开始，原始 HTML 长度:', html.length);
 
     const context: ConversionContext = {
       url,
@@ -55,7 +54,10 @@ export class DefaultConverter implements ContentConverter {
       const doc = parseHTML(`<!DOCTYPE html><html><body>${cleanedHtml}</body></html>`);
       console.log('[DefaultConverter] linkedom 解析成功');
       console.log('[DefaultConverter] doc.document.body 存在:', !!doc.document.body);
-      console.log('[DefaultConverter] body.innerHTML 长度:', doc.document.body?.innerHTML?.length || 0);
+      console.log(
+        '[DefaultConverter] body.innerHTML 长度:',
+        doc.document.body?.innerHTML?.length || 0
+      );
 
       // 转换为Markdown
       console.log('[DefaultConverter] 开始 turndown 转换...');
@@ -77,7 +79,10 @@ export class DefaultConverter implements ContentConverter {
       return markdown;
     } catch (error) {
       console.error('[DefaultConverter] 转换过程出错:', error);
-      console.error('[DefaultConverter] 错误堆栈:', error instanceof Error ? error.stack : String(error));
+      console.error(
+        '[DefaultConverter] 错误堆栈:',
+        error instanceof Error ? error.stack : String(error)
+      );
       throw error;
     }
   }
