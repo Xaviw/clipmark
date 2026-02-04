@@ -3,6 +3,8 @@
  */
 
 import dotenv from 'dotenv';
+import os from 'os';
+import path from 'path';
 
 // 加载环境变量
 dotenv.config();
@@ -17,6 +19,8 @@ export interface ServerConfig {
   host: string;
   /** 数据存储目录 */
   dataDir: string;
+  /** 日志存储目录 */
+  logDir: string;
   /** CORS 允许的源 */
   corsOrigin: string[];
 }
@@ -27,7 +31,8 @@ export interface ServerConfig {
 const DEFAULT_CONFIG: ServerConfig = {
   port: parseInt(process.env.PORT || '37283', 10),
   host: process.env.HOST || 'localhost',
-  dataDir: process.env.DATA_DIR || `${process.env.HOME || ''}/.clipmark`,
+  dataDir: process.env.DATA_DIR || path.join(os.homedir(), '.clipmark'),
+  logDir: process.env.LOG_DIR || path.join(os.homedir(), '.clipmark', 'logs'),
   corsOrigin: process.env.CORS_ORIGIN?.split(',') || ['chrome-extension://*'],
 };
 

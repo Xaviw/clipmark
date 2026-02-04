@@ -4,6 +4,9 @@
 
 import Fastify, { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as net from 'net';
 import { getConfig } from '../config/index.js';
 import { itemsRoutes } from '../routes/items.js';
 import { healthRoutes } from '../routes/health.js';
@@ -15,21 +18,65 @@ let httpServerInstance: FastifyInstance | null = null;
 let isHttpServerStarting = false;
 
 /**
+ * 创建日志文件流
+ */
+function createLogStream(): fs.WriteStream {
+  const config = getConfig();
+  const logDir = config.logDir;
+
+  // 确保日志目录存在
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
+  }
+
+  // 生成日志文件名：http-YYYY-MM-DD.log
+  const date = new Date();
+  const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
+  const logFile = path.join(logDir, `http-${dateStr}.log`);
+
+  // 创建可追加的文件流
+  return fs.createWriteStream(logFile, { flags: 'a', encoding: 'utf8' });
+}
+
+/**
+ * 写入日志消息到文件
+ */
+function writeLog(message: string): void {
+  const config = getConfig();
+  const logDir = config.logDir;
+
+  // 确保日志目录存在
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
+  }
+
+  // 生成日志文件名
+  const date = new Date();
+  const dateStr = date.toISOString().split('T')[0];
+  const logFile = path.join(logDir, `http-${dateStr}.log`);
+
+  // 添加时间戳
+  const timestamp = new Date().toISOString();
+  const logMessage = `[${timestamp}] ${message}\n`;
+
+  // 追加写入日志文件
+  fs.appendFileSync(logFile, logMessage, 'utf8');
+}
+
+/**
  * 创建并启动 HTTP 服务器
  */
 export async function createHttpServer(): Promise<FastifyInstance> {
   const config = getConfig();
 
+  // 创建日志文件流
+  const logStream = createLogStream();
+
   const fastify = Fastify({
     logger: {
       level: process.env.LOG_LEVEL || 'info',
-      // 在 MCP 模式下，禁用日志输出到 stdout，避免干扰 stdio 通信
-      // 或者将日志输出到 stderr
-      stream: {
-        write: (msg: string) => {
-          console.error(msg.trim());
-        },
-      },
+      // 将日志输出到文件，避免干扰 MCP stdio 通信
+      stream: logStream,
     },
   });
 
@@ -91,8 +138,8 @@ export async function startHttpServer(): Promise<FastifyInstance | null> {
       host: config.host,
     });
 
-    // 使用 stderr 输出，避免干扰 MCP stdio 通信
-    console.error(`ClipMark HTTP Server listening at ${address}`);
+    // 将启动信息写入日志文件
+    writeLog(`ClipMark HTTP Server listening at ${address}`);
 
     httpServerInstance = fastify;
     return fastify;
@@ -101,7 +148,7 @@ export async function startHttpServer(): Promise<FastifyInstance | null> {
 
     // 如果端口已被占用，说明已有 HTTP 服务器在运行，这不是错误
     if (err instanceof Error && 'code' in err && err.code === 'EADDRINUSE') {
-      console.error(`HTTP Server is already running on ${config.host}:${config.port}`);
+      writeLog(`HTTP Server is already running on ${config.host}:${config.port}`);
       return null;
     }
 
@@ -126,4 +173,78 @@ export async function stopHttpServer(): Promise<void> {
  */
 export function getHttpServerInstance(): FastifyInstance | null {
   return httpServerInstance;
+}
+
+/**
+ * 检查端口是否被占用
+ */
+export async function isPortInUse(port: number, host: string = '127.0.0.1'): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+
+    server.once('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        resolve(true);
+      } else {
+        resolve(false);
+      }
+    });
+
+    server.once('listening', () => {
+      server.close();
+      resolve(false);
+    });
+
+    server.listen(port, host);
+  });
+}
+
+/**
+ * 检查 HTTP 服务器健康状态
+ */
+export async function checkHttpServerHealth(): Promise<boolean> {
+  const config = getConfig();
+  const url = `http://${config.host}:${config.port}/health`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: AbortSignal.timeout(2000), // 2秒超时
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 确保 HTTP 服务器可用（自愈机制）
+ * 如果服务器不可用且端口未被占用，则自动重启
+ */
+export async function ensureHttpServer(): Promise<void> {
+  const config = getConfig();
+
+  // 如果当前进程有 HTTP 服务器实例，直接返回
+  if (httpServerInstance) {
+    return;
+  }
+
+  // 检查健康状态
+  const isHealthy = await checkHttpServerHealth();
+  if (isHealthy) {
+    // 服务器健康，但不在当前进程（其他 MCP 进程启动的）
+    return;
+  }
+
+  // 服务器不健康，检查端口是否被占用
+  const portInUse = await isPortInUse(config.port, config.host);
+  if (portInUse) {
+    // 端口被占用但服务不健康，可能是僵尸进程，记录日志
+    writeLog(`Port ${config.port} is in use but server is unhealthy`);
+    return;
+  }
+
+  // 端口未被占用，重新启动 HTTP 服务器
+  writeLog('HTTP server is down, restarting...');
+  await startHttpServer();
 }

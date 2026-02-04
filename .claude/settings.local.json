@@ -22,7 +22,12 @@
       "Bash(pnpm build)",
       "Bash(node test-sync.js)",
       "Bash(kill 27994)",
-      "Bash(pnpm start)"
+      "Bash(pnpm start)",
+      "mcp__serena__search_for_pattern",
+      "mcp__serena__activate_project",
+      "mcp__serena__find_file",
+      "mcp__serena__find_symbol",
+      "mcp__sequential-thinking__sequentialthinking"
     ],
     "deny": [],
     "ask": []

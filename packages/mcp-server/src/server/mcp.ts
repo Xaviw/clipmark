@@ -10,7 +10,7 @@ import {
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import { getStorage } from './storage.js';
-import { startHttpServer } from './http.js';
+import { startHttpServer, stopHttpServer, ensureHttpServer } from './http.js';
 
 /**
  * MCP 工具定义
@@ -66,6 +66,9 @@ export async function createMCPServer(): Promise<Server> {
 
   // 注册工具调用处理器
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    // 确保 HTTP 服务器可用（自愈机制）
+    await ensureHttpServer();
+
     const storage = getStorage();
 
     switch (request.params.name) {
@@ -168,6 +171,19 @@ export async function startMCPServer(): Promise<void> {
   const transport = new StdioServerTransport();
 
   await server.connect(transport);
+
+  // 监听 stdin 断开事件
+  process.stdin.on('end', async () => {
+    console.error('stdin closed, shutting down...');
+    await stopHttpServer();
+    process.exit(0);
+  });
+
+  process.stdin.on('close', async () => {
+    console.error('stdin closed, shutting down...');
+    await stopHttpServer();
+    process.exit(0);
+  });
 
   console.error('ClipMark MCP Server running on stdio');
   if (httpServer) {

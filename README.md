@@ -41,6 +41,7 @@ pnpm start
 ### @clipmark/extension
 
 Chrome 浏览器扩展
+
 - 监听页面复制事件，捕获 HTML 和纯文本
 - 根据来源 URL 智能选择转换器
 - 支持本地存储和历史管理
@@ -49,6 +50,7 @@ Chrome 浏览器扩展
 ### @clipmark/mcp-server
 
 MCP 服务器
+
 - 提供 HTTP API（端口 37283）
 - 实现 MCP 协议（stdio）
 - 文件存储（`~/.clipmark/data.json`）
@@ -57,6 +59,7 @@ MCP 服务器
 ### @clipmark/shared
 
 共享代码库
+
 - 类型定义（ClipItem、SaveItemRequest 等）
 - 转换器系统（支持扩展自定义转换器）
 - 工具函数和常量配置

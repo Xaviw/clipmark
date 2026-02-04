@@ -6,6 +6,24 @@
 import { initializeStorage } from './storage.js';
 import { startMCPServer } from './mcp.js';
 import { getConfig, validateConfig } from '../config/index.js';
+import { stopHttpServer } from './http.js';
+
+/**
+ * 优雅关闭
+ */
+async function gracefulShutdown(signal: string): Promise<void> {
+  console.error(`\nReceived ${signal}, shutting down gracefully...`);
+
+  try {
+    // 关闭 HTTP 服务器
+    await stopHttpServer();
+    console.error('HTTP server stopped');
+  } catch (error) {
+    console.error('Error stopping HTTP server:', error);
+  }
+
+  process.exit(0);
+}
 
 /**
  * 主函数
@@ -41,6 +59,11 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
   process.exit(1);
 });
+
+// 监听进程退出信号
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGHUP', () => gracefulShutdown('SIGHUP'));
 
 // 启动服务
 main().catch((error) => {

@@ -39,11 +39,13 @@ ClipMark 是一个 monorepo 项目，包含三个核心包：
 ### 数据存储架构
 
 **扩展端存储**：
+
 - 使用 `chrome.storage.local` 存储剪贴板历史
 - 提供本地 Popup UI 查看和管理
 - 数据结构与服务器端保持一致
 
 **服务器端存储**：
+
 - 文件路径：`~/.clipmark/data.json`
 - 使用 `FileStorage` 类实现文件存储管理（见 [storage.ts](packages/mcp-server/src/server/storage.ts)）
 - 采用内存缓存 + 文件持久化的双层架构
@@ -87,6 +89,7 @@ MCP 工具：
 - `get_capture_by_id`: 根据 ID 获取历史记录
 
 **扩展与服务器通信**（见 [api.ts](packages/extension/src/background/api.ts)）：
+
 - 使用 `fetch` API 进行 HTTP 通信
 - 内置超时控制（`API_CONFIG.TIMEOUT`）
 - 静默失败机制：服务器不可用时不影响扩展功能
@@ -105,17 +108,20 @@ MCP 工具：
 ### 本地开发
 
 1. **安装依赖**：
+
    ```bash
    pnpm install
    ```
 
 2. **开发模式**：
+
    ```bash
    # 同时开发所有包
    pnpm dev
    ```
 
 3. **构建生产版本**：
+
    ```bash
    pnpm build
    ```
@@ -175,23 +181,27 @@ curl http://localhost:37283/health
 ## 开发注意事项
 
 ### 系统要求
+
 - Node.js >= 18.0.0
 - pnpm >= 8.0.0 (推荐 10.x)
 - Chrome 浏览器 (扩展开发)
 
 ### 架构设计原则
+
 - **类型安全**: 所有包通过 `@clipmark/shared` 共享类型定义
 - **容错优先**: 所有外部调用都有降级方案
 - **性能优化**: 使用内存缓存减少文件 I/O
 - **向后兼容**: 支持数据版本控制和迁移
 
 ### Chrome 扩展特性
+
 - 使用 Manifest V3
 - Service Worker 替代 Background Page
 - Content Script 与 Background 通过消息传递通信
 - 支持 Clipboard API 读取 HTML 和纯文本
 
 ### MCP 协议集成
+
 - 支持标准 MCP 协议（stdio）
 - 同时提供 HTTP API 供其他工具集成
 - 工具返回结构化的 `ClipItem` 数据
@@ -245,25 +255,33 @@ clipmark/
 ## 常见问题
 
 ### Q: MCP 服务器无法启动？
+
 A: 检查端口 37283 是否被占用：
+
 ```bash
 lsof -i :37283
 ```
 
 ### Q: 扩展无法同步到服务器？
+
 A: 确认 MCP 服务器正在运行，并检查：
+
 1. 服务器健康检查：`curl http://localhost:37283/health`
 2. 扩展的 Service Worker 日志是否有错误
 3. 网络请求是否被 CORS 策略阻止
 
 ### Q: 转换结果不符合预期？
+
 A: 可以：
+
 1. 检查原始 HTML 是否正确获取（DevTools Network 面板）
 2. 在 `clipboard.ts` 中调整转换器优先级
 3. 为特定网站添加专用转换器
 
 ### Q: 如何清除所有数据？
+
 A: 分别清除扩展和服务器数据：
+
 1. 扩展：在 Popup 中点击"清空"按钮
 2. 服务器：删除 `~/.clipmark/data.json` 文件
 
