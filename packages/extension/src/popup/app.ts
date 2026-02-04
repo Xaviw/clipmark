@@ -13,7 +13,7 @@ const elements = {
   pageStatus: document.getElementById('page-status')!,
   historyList: document.getElementById('history-list')!,
   emptyState: document.getElementById('empty-state')!,
-  refreshBtn: document.getElementById('refresh-btn')!,
+  syncBtn: document.getElementById('sync-btn') as HTMLButtonElement,
   clearAllBtn: document.getElementById('clear-all-btn')!,
   settings: {
     toggle: document.getElementById('settings-toggle')!,
@@ -157,8 +157,8 @@ function renderSettings(settings: AppSettings): void {
 
 // ========== Event Handlers ==========
 function bindEvents(): void {
-  // 刷新按钮
-  elements.refreshBtn.addEventListener('click', refreshItems);
+  // 同步按钮
+  elements.syncBtn.addEventListener('click', handleSync);
 
   // 设置区域折叠切换
   elements.settings.toggle.addEventListener('click', toggleSettings);
@@ -246,7 +246,7 @@ async function handleDelete(event: Event): Promise<void> {
   if (!confirmed) return;
 
   try {
-    // 从本地存储删除
+    // 从本地存储删除（会自动同步到 MCP 服务器）
     await new Promise<void>((resolve) => {
       chrome.storage.local.get('items', (result) => {
         const items = (result.items as ClipItem[]) || [];
@@ -254,9 +254,6 @@ async function handleDelete(event: Event): Promise<void> {
         chrome.storage.local.set({ items: filtered }, () => resolve());
       });
     });
-
-    // 通知 background 删除 MCP 服务器数据
-    chrome.runtime.sendMessage({ type: 'DELETE_ITEM', id });
 
     // 刷新列表
     await refreshItems();
@@ -302,25 +299,81 @@ async function handleClearAll(): Promise<void> {
   if (!confirmed) return;
 
   try {
-    // 先获取所有项目的 ID，用于后续删除 MCP 服务器数据
+    // 清空本地存储（会自动同步到 MCP 服务器）
+    await chrome.storage.local.set({ items: [] });
+
+    // 刷新列表
+    await refreshItems();
+  } catch (error) {
+    console.error('Failed to clear all items:', error);
+  }
+}
+
+async function handleSync(): Promise<void> {
+  const btn = elements.syncBtn;
+  const syncText = btn.querySelector('.sync-text') as HTMLElement;
+  const syncIcon = btn.querySelector('.sync-icon') as HTMLElement;
+
+  try {
+    // 禁用按钮并显示加载状态
+    btn.disabled = true;
+    syncText.textContent = '同步中...';
+
+    // 获取浏览器扩展的本地数据
     const items = await new Promise<ClipItem[]>((resolve) => {
       chrome.storage.local.get('items', (result) => {
         resolve((result.items as ClipItem[]) || []);
       });
     });
 
-    const ids = items.map((item) => item.id);
+    // 将所有数据一次性推送到 MCP 服务器（全量同步）
+    const response = await fetch('http://localhost:37283/api/items/sync', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ items }),
+    });
 
-    // 清空本地存储
-    await chrome.storage.local.set({ items: [] });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
 
-    // 通知 background 清空 MCP 服务器数据（传入 ID 列表）
-    chrome.runtime.sendMessage({ type: 'CLEAR_ALL_ITEMS', ids });
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.message || 'Sync failed');
+    }
 
-    // 刷新列表
-    await refreshItems();
+    // 显示成功状态
+    btn.classList.add('sync-success');
+    syncText.textContent = '同步成功';
+    syncIcon.hidden = false;
+    syncIcon.innerHTML = '<path d="M13.5 3L5.5 11L2.5 8" stroke="currentColor" stroke-width="2" fill="none"/>';
+
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.classList.remove('sync-success');
+      syncText.textContent = '同步至本地';
+      syncIcon.hidden = true;
+    }, 2000);
   } catch (error) {
-    console.error('Failed to clear all items:', error);
+    console.error('Failed to sync:', error);
+
+    // 显示错误状态
+    btn.classList.add('sync-error');
+    syncText.textContent = '同步失败';
+    syncIcon.hidden = false;
+    syncIcon.innerHTML = `
+      <path d="M8 2A6 6 0 1 0 8 14A6 6 0 1 0 8 2z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M8 5v3M8 11h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    `;
+
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.classList.remove('sync-error');
+      syncText.textContent = '同步至本地';
+      syncIcon.hidden = true;
+    }, 2000);
   }
 }
 

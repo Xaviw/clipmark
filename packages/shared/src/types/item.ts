@@ -8,10 +8,6 @@ export interface ClipItem {
   id: string;
   /** 转换后的Markdown内容 */
   content: string;
-  /** 原始纯文本（备份） */
-  originalPlain: string;
-  /** 原始HTML（备份） */
-  originalHtml: string;
   /** 元数据 */
   metadata: {
     /** 来源URL */

@@ -5,8 +5,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { ClipItem } from '@clipmark/shared';
-import type { SaveItemRequest } from '@clipmark/shared';
-import { generateId, now } from '@clipmark/shared';
 import { getConfig } from '../config/index.js';
 
 /**
@@ -26,14 +24,12 @@ const BACKUP_FILENAME_TEMPLATE = 'data.json';
 export class FileStorage {
   private dataDir: string;
   private dataFile: string;
-  private memoryCache: Map<string, ClipItem>;
   private initialized: boolean = false;
 
   constructor() {
     const config = getConfig();
     this.dataDir = config.dataDir;
     this.dataFile = path.join(this.dataDir, STORAGE_FILENAME);
-    this.memoryCache = new Map();
   }
 
   /**
@@ -48,129 +44,45 @@ export class FileStorage {
       // 确保数据目录存在
       await fs.mkdir(this.dataDir, { recursive: true });
 
-      // 加载现有数据
-      await this.loadFromFile();
+      // 检查文件是否存在，不存在则创建
+      try {
+        await fs.access(this.dataFile);
+      } catch {
+        // 文件不存在，创建新的空数据文件
+        await this.saveItemsToFile([]);
+      }
 
       this.initialized = true;
     } catch (error) {
-      // 如果加载失败，可能是文件损坏，尝试恢复
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        // 文件不存在，创建新的
-        await this.saveToFile();
-        this.initialized = true;
-      } else {
-        // 其他错误，可能是文件损坏
-        await this.handleCorruptedData(error);
-        this.initialized = true;
-      }
+      // 其他错误，可能是文件损坏
+      await this.handleCorruptedData(error);
+      this.initialized = true;
     }
   }
 
   /**
-   * 保存项目
+   * 替换所有数据（全量同步）
    */
-  async saveItem(request: SaveItemRequest): Promise<ClipItem> {
+  async replaceAllItems(items: ClipItem[]): Promise<void> {
     this.ensureInitialized();
-
-    // 如果请求中提供了 ID，使用它；否则生成新的
-    const id = request.id || generateId();
-    const createdAt = now();
-    const item: ClipItem = {
-      id,
-      content: request.content,
-      originalPlain: request.originalPlain,
-      originalHtml: request.originalHtml,
-      metadata: request.metadata,
-      createdAt,
-      size: request.content.length,
-    };
-
-    // 添加到内存缓存
-    this.memoryCache.set(id, item);
-
-    // 持久化到文件
-    await this.saveToFile();
-
-    return item;
+    await this.saveItemsToFile(items);
   }
 
   /**
-   * 获取单个项目
-   */
-  async getItem(id: string): Promise<ClipItem | null> {
-    this.ensureInitialized();
-
-    // 重新从文件加载数据，确保获取最新的数据
-    await this.loadFromFile();
-
-    return this.memoryCache.get(id) || null;
-  }
-
-  /**
-   * 获取所有项目
+   * 获取所有项目（从文件读取）
    */
   async getAllItems(): Promise<ClipItem[]> {
     this.ensureInitialized();
-
-    // 重新从文件加载数据，确保获取最新的数据
-    await this.loadFromFile();
-
-    return Array.from(this.memoryCache.values()).sort((a, b) => b.createdAt - a.createdAt);
+    return this.loadItemsFromFile();
   }
 
   /**
-   * 获取项目列表（分页）
+   * 获取单个项目（从文件读取）
    */
-  async getItems(
-    limit: number = 10,
-    offset: number = 0
-  ): Promise<{ items: ClipItem[]; total: number }> {
+  async getItem(id: string): Promise<ClipItem | null> {
     this.ensureInitialized();
-
-    // 重新从文件加载数据，确保获取最新的数据
-    await this.loadFromFile();
-
-    const allItems = Array.from(this.memoryCache.values()).sort(
-      (a, b) => b.createdAt - a.createdAt
-    );
-    const total = allItems.length;
-    const items = allItems.slice(offset, offset + limit);
-
-    return { items, total };
-  }
-
-  /**
-   * 删除单个项目
-   */
-  async deleteItem(id: string): Promise<boolean> {
-    this.ensureInitialized();
-
-    const deleted = this.memoryCache.delete(id);
-    if (deleted) {
-      await this.saveToFile();
-    }
-
-    return deleted;
-  }
-
-  /**
-   * 批量删除项目
-   */
-  async deleteItems(ids: string[]): Promise<number> {
-    this.ensureInitialized();
-
-    let count = 0;
-    for (const id of ids) {
-      if (this.memoryCache.delete(id)) {
-        count++;
-      }
-    }
-
-    if (count > 0) {
-      await this.saveToFile();
-    }
-
-    return count;
+    const items = await this.loadItemsFromFile();
+    return items.find((item) => item.id === id) || null;
   }
 
   /**
@@ -178,57 +90,20 @@ export class FileStorage {
    */
   async getLatestItem(): Promise<ClipItem | null> {
     this.ensureInitialized();
+    const items = await this.loadItemsFromFile();
 
-    // 重新从文件加载数据，确保获取最新的数据
-    // 这解决了多进程场景下数据不同步的问题
-    await this.loadFromFile();
-
-    const items = Array.from(this.memoryCache.values());
     if (items.length === 0) {
       return null;
     }
 
-    // 按创建时间降序排序，如果时间相同则按 ID 字典序倒序排序
-    // 这确保了即使时间戳相同，也能稳定地返回最新添加的记录
-    // 由于 UUID 以字母开头，数字 ID 以数字开头，UUID 在字典序中会排在数字后面
-    // 所以我们使用倒序字典序，确保数字 ID（新格式）优先于 UUID（旧格式）被返回
-    return items.sort((a, b) => {
-      if (b.createdAt !== a.createdAt) {
-        return b.createdAt - a.createdAt;
-      }
-      // 时间戳相同时，按 ID 字典序倒序排序
-      // 这样数字 ID（如 "6966"）会排在 UUID（如 "0b1a69aa-..."）前面
-      return a.id.localeCompare(b.id);
-    })[0];
+    // 按创建时间降序排序，返回最新的项目
+    return items.sort((a, b) => b.createdAt - a.createdAt)[0];
   }
 
   /**
-   * 清空所有数据
+   * 从文件加载所有项目
    */
-  async clearAll(): Promise<void> {
-    this.ensureInitialized();
-
-    this.memoryCache.clear();
-    await this.saveToFile();
-  }
-
-  /**
-   * 获取统计信息
-   */
-  async getStats(): Promise<{ total: number; totalSize: number }> {
-    this.ensureInitialized();
-
-    const items = Array.from(this.memoryCache.values());
-    const total = items.length;
-    const totalSize = items.reduce((sum, item) => sum + item.size, 0);
-
-    return { total, totalSize };
-  }
-
-  /**
-   * 从文件加载数据
-   */
-  private async loadFromFile(): Promise<void> {
+  private async loadItemsFromFile(): Promise<ClipItem[]> {
     try {
       const content = await fs.readFile(this.dataFile, 'utf-8');
       const data: StorageData = JSON.parse(content);
@@ -238,22 +113,18 @@ export class FileStorage {
         throw new Error(`Unsupported data version: ${data.version}`);
       }
 
-      // 加载到内存缓存
-      this.memoryCache.clear();
-      for (const item of data.items) {
-        this.memoryCache.set(item.id, item);
-      }
+      return data.items || [];
     } catch (error) {
       throw new Error(`Failed to load data file: ${(error as Error).message}`);
     }
   }
 
   /**
-   * 保存数据到文件
+   * 保存项目到文件
    */
-  private async saveToFile(): Promise<void> {
+  private async saveItemsToFile(items: ClipItem[]): Promise<void> {
     const data: StorageData = {
-      items: Array.from(this.memoryCache.values()),
+      items,
       version: 1,
     };
 
@@ -280,7 +151,7 @@ export class FileStorage {
     }
 
     // 创建新的空数据文件
-    await this.saveToFile();
+    await this.saveItemsToFile([]);
   }
 
   /**

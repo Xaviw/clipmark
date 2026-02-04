@@ -19,17 +19,15 @@ export { DEFAULT_SETTINGS };
  */
 export const API_CONFIG = {
   /** 默认MCP服务地址 */
-  DEFAULT_MCP_URL: 'http://localhost:37283',
+  DEFAULT_HTTP_URL: 'http://localhost:37283',
   /** API端点 */
   ENDPOINTS: {
-    /** 保存项目 */
-    SAVE_ITEM: '/api/items',
-    /** 获取列表 */
-    GET_ITEMS: '/api/items',
+    /** 同步所有数据 */
+    SYNC_ITEMS: '/api/items/sync',
+    /** 获取最新项目 */
+    GET_LATEST_ITEM: '/api/items/latest',
     /** 获取单个项目 */
     GET_ITEM: '/api/items',
-    /** 删除项目 */
-    DELETE_ITEM: '/api/items',
     /** 健康检查 */
     HEALTH: '/health',
   } as const,

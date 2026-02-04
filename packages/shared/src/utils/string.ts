@@ -1,9 +1,10 @@
 /**
- * 生成唯一ID
- * 使用4位数字格式 (0000-9999)
+ * 生成下一个自增ID
+ * 基于当前ID递增
+ * @param currentId - 当前最大的ID
+ * @returns 下一个ID（数字格式）
  */
-export function generateId(): string {
-  return Math.floor(Math.random() * 10000)
-    .toString()
-    .padStart(4, '0');
+export function getNextId(currentId?: string): string {
+  const nextNum = currentId ? parseInt(currentId, 10) + 1 : 1;
+  return nextNum.toString();
 }

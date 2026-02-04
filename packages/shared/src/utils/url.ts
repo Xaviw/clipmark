@@ -12,11 +12,14 @@
  * @returns 正则表达式
  */
 export function patternToRegex(pattern: string): RegExp {
-  // 转义正则表达式特殊字符
-  let regexStr = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  // 先替换通配符为临时占位符（避免被转义）
+  const tempStr = pattern.replace(/\*/g, '\0WILDCARD\0');
 
-  // 替换通配符
-  regexStr = regexStr.replace(/\\\*/g, '.*');
+  // 转义正则表达式特殊字符（除了占位符）
+  let regexStr = tempStr.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+
+  // 将占位符替换为正则表达式的通配符
+  regexStr = regexStr.replace(/\0WILDCARD\0/g, '.*');
 
   // 确保匹配整个字符串
   regexStr = `^${regexStr}$`;

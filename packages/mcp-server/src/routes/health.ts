@@ -3,7 +3,6 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import { getStorage } from '../server/storage.js';
 
 /**
  * 健康检查处理器
@@ -12,16 +11,11 @@ async function healthCheckHandler(): Promise<{
   status: string;
   timestamp: number;
   uptime: number;
-  storage: { total: number; totalSize: number };
 }> {
-  const storage = getStorage();
-  const stats = await storage.getStats();
-
   return {
     status: 'ok',
     timestamp: Date.now(),
     uptime: process.uptime(),
-    storage: stats,
   };
 }
 

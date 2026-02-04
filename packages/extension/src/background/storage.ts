@@ -3,8 +3,9 @@
  */
 
 import type { ClipItem } from '@clipmark/shared';
-import { now, generateId } from '@clipmark/shared';
+import { now, getNextId } from '@clipmark/shared';
 import { getSettings } from './settings.js';
+import { syncToMCP } from './api.js';
 
 const STORAGE_KEY = 'items';
 
@@ -38,18 +39,19 @@ export async function getItem(id: string): Promise<ClipItem | null> {
  */
 export async function saveItem(
   content: string,
-  originalPlain: string,
-  originalHtml: string,
   sourceUrl: string,
   title: string
 ): Promise<ClipItem> {
-  const id = generateId();
+  const items = await getAllItems();
+
+  // 获取当前最大 ID，生成下一个自增 ID
+  const maxId = items.length > 0 ? items[items.length - 1].id : undefined;
+  const id = getNextId(maxId);
+
   const createdAt = now();
   const item: ClipItem = {
     id,
     content,
-    originalPlain,
-    originalHtml,
     metadata: {
       sourceUrl,
       title,
@@ -59,7 +61,6 @@ export async function saveItem(
     size: content.length,
   };
 
-  const items = await getAllItems();
   items.push(item);
 
   // 检查是否超出最大数量限制
@@ -72,12 +73,8 @@ export async function saveItem(
 
   await chrome.storage.local.set({ [STORAGE_KEY]: items });
 
-  // 调试日志：记录保存的项目
-  console.log('[ClipMark Storage] 保存项目');
-  console.log('[ClipMark Storage] 项目 ID:', id);
-  console.log('[ClipMark Storage] Content 长度:', content.length);
-  console.log('[ClipMark Storage] Content 预览:', content.substring(0, 500));
-  console.log('[ClipMark Storage] Size:', item.size);
+  // 同步到 MCP 服务器
+  await syncToMCP(items);
 
   return item;
 }
@@ -94,22 +91,11 @@ export async function deleteItem(id: string): Promise<boolean> {
   }
 
   await chrome.storage.local.set({ [STORAGE_KEY]: filtered });
+
+  // 同步到 MCP 服务器
+  await syncToMCP(filtered);
+
   return true;
-}
-
-/**
- * 批量删除项目
- */
-export async function deleteItems(ids: string[]): Promise<number> {
-  const items = await getAllItems();
-  const filtered = items.filter((item) => !ids.includes(item.id));
-  const deletedCount = items.length - filtered.length;
-
-  if (deletedCount > 0) {
-    await chrome.storage.local.set({ [STORAGE_KEY]: filtered });
-  }
-
-  return deletedCount;
 }
 
 /**
@@ -117,6 +103,9 @@ export async function deleteItems(ids: string[]): Promise<number> {
  */
 export async function clearAllItems(): Promise<void> {
   await chrome.storage.local.set({ [STORAGE_KEY]: [] });
+
+  // 同步到 MCP 服务器
+  await syncToMCP([]);
 }
 
 /**

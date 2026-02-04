@@ -7,12 +7,7 @@
 // ========== Types ==========
 export type { ClipItem, StorageData } from './types/item';
 
-export type {
-  SaveItemRequest,
-  SaveItemResponse,
-  GetItemsResponse,
-  DeleteItemResponse,
-} from './types/api';
+export type { SyncItemsRequest, SyncItemsResponse } from './types/api';
 
 export type { AppSettings } from './types/config';
 
@@ -22,7 +17,7 @@ export { CONTENT_LIMITS, DEFAULT_SETTINGS, API_CONFIG } from './constants';
 // ========== Utils ==========
 export { now } from './utils/date';
 
-export { generateId } from './utils/string';
+export { getNextId } from './utils/string';
 
 export { matchAnyPattern } from './utils/url';
 

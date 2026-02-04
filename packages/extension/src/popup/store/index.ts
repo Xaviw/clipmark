@@ -138,9 +138,20 @@ async function getCurrentTab(): Promise<chrome.tabs.Tab | null> {
  */
 async function checkPageEnabled(url: string): Promise<boolean> {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: 'GET_CURRENT_PAGE_STATUS', url }, (response) => {
-      resolve(response?.enabled ?? true);
-    });
+    if (!chrome?.runtime) {
+      console.error('chrome.runtime is not available');
+      resolve(true); // 默认启用
+      return;
+    }
+
+    try {
+      chrome.runtime.sendMessage({ type: 'GET_CURRENT_PAGE_STATUS', url }, (response) => {
+        resolve(response?.enabled ?? true);
+      });
+    } catch (error) {
+      console.error('Failed to check page enabled status:', error);
+      resolve(true); // 默认启用
+    }
   });
 }
 
@@ -149,8 +160,19 @@ async function checkPageEnabled(url: string): Promise<boolean> {
  */
 async function checkMCPConnection(): Promise<boolean> {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: 'CHECK_MCP_CONNECTION' }, (response) => {
-      resolve(response?.connected ?? false);
-    });
+    if (!chrome?.runtime) {
+      console.error('chrome.runtime is not available');
+      resolve(false); // 默认未连接
+      return;
+    }
+
+    try {
+      chrome.runtime.sendMessage({ type: 'CHECK_MCP_CONNECTION' }, (response) => {
+        resolve(response?.connected ?? false);
+      });
+    } catch (error) {
+      console.error('Failed to check MCP connection:', error);
+      resolve(false); // 默认未连接
+    }
   });
 }

@@ -26,10 +26,10 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
  * 初始化设置
  */
 export async function initializeSettings(): Promise<void> {
-  const existing = await getSettings();
+  const result = await chrome.storage.sync.get(STORAGE_KEY);
 
-  // 如果设置不存在，保存默认设置
-  if (!existing) {
+  // 检查原始存储，如果设置不存在，保存默认设置
+  if (!result[STORAGE_KEY]) {
     await saveSettings(DEFAULT_SETTINGS);
   }
 }

@@ -4,8 +4,9 @@
  */
 
 import './clipboard.js';
-import { initializeStorage } from './storage.js';
+import { initializeStorage, onStorageChanged } from './storage.js';
 import { initializeSettings } from './settings.js';
+import { syncToMCP } from './api.js';
 
 /**
  * 初始化扩展
@@ -16,6 +17,14 @@ async function initialize(): Promise<void> {
 
   // 初始化设置
   await initializeSettings();
+
+  // 监听存储变化，自动同步到 MCP 服务器
+  onStorageChanged(async (items) => {
+    // 静默同步，不阻塞用户操作
+    syncToMCP(items).catch(() => {
+      // 静默处理错误
+    });
+  });
 }
 
 // 扩展安装时初始化

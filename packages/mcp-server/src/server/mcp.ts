@@ -10,7 +10,7 @@ import {
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import { getStorage } from './storage.js';
-import { startHttpServer, stopHttpServer, ensureHttpServer } from './http.js';
+import { startHttpServer, ensureHttpServer } from './http.js';
 
 /**
  * MCP 工具定义
@@ -172,17 +172,13 @@ export async function startMCPServer(): Promise<void> {
 
   await server.connect(transport);
 
-  // 监听 stdin 断开事件
+  // 监听 stdin 断开事件（保持 HTTP 服务器运行）
   process.stdin.on('end', async () => {
-    console.error('stdin closed, shutting down...');
-    await stopHttpServer();
-    process.exit(0);
+    console.error('stdin closed, but HTTP server continues running...');
   });
 
   process.stdin.on('close', async () => {
-    console.error('stdin closed, shutting down...');
-    await stopHttpServer();
-    process.exit(0);
+    console.error('stdin closed, but HTTP server continues running...');
   });
 
   console.error('ClipMark MCP Server running on stdio');

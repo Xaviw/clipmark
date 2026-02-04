@@ -4,68 +4,67 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { getStorage } from '../server/storage.js';
-import type {
-  SaveItemRequest,
-  SaveItemResponse,
-  GetItemsResponse,
-  DeleteItemResponse,
-  ClipItem,
-} from '@clipmark/shared';
-import { CONTENT_LIMITS } from '@clipmark/shared';
+import type { ClipItem } from '@clipmark/shared';
 
 /**
- * 保存项目
+ * 同步所有数据（全量替换）
  */
-async function saveItemHandler(
-  request: FastifyRequest<{ Body: SaveItemRequest }>,
+async function syncItemsHandler(
+  request: FastifyRequest<{ Body: { items: ClipItem[] } }>,
   reply: FastifyReply
-): Promise<SaveItemResponse> {
+): Promise<{ success: boolean; message?: string }> {
   try {
+    const { items } = request.body;
+
+    if (!Array.isArray(items)) {
+      reply.code(400);
+      return {
+        success: false,
+        message: 'Invalid request: items array is required',
+      };
+    }
+
     const storage = getStorage();
-    const item = await storage.saveItem(request.body);
+    await storage.replaceAllItems(items);
 
     return {
-      id: item.id,
       success: true,
-      message: 'Item saved successfully',
+      message: 'Items synced successfully',
     };
   } catch (error) {
     reply.code(500);
     return {
-      id: '',
       success: false,
-      message: `Failed to save item: ${(error as Error).message}`,
+      message: `Failed to sync items: ${(error as Error).message}`,
     };
   }
 }
 
 /**
- * 获取项目列表
+ * 获取最新项目
  */
-async function getItemsHandler(
-  request: FastifyRequest<{
-    Querystring: { limit?: string; offset?: string };
-  }>,
+async function getLatestItemHandler(
+  _request: FastifyRequest,
   reply: FastifyReply
-): Promise<GetItemsResponse> {
+): Promise<ClipItem | { error: string }> {
   try {
     const storage = getStorage();
-    const limit = Math.min(parseInt(request.query.limit || '10', 10), 100);
-    const offset = Math.max(parseInt(request.query.offset || '0', 10), 0);
+    const item = await storage.getLatestItem();
 
-    const result = await storage.getItems(limit, offset);
-    return result;
-  } catch {
+    if (!item) {
+      reply.code(404);
+      return { error: 'No items found' };
+    }
+
+    return item;
+  } catch (error) {
     reply.code(500);
-    return {
-      items: [],
-      total: 0,
-    };
+    return { error: (error as Error).message };
   }
 }
 
 /**
- * 获取单个项目
+ * 获取单个项目（按ID查询）
  */
 async function getItemHandler(
   request: FastifyRequest<{ Params: { id: string } }>,
@@ -88,123 +87,51 @@ async function getItemHandler(
 }
 
 /**
- * 删除单个项目
- */
-async function deleteItemHandler(
-  request: FastifyRequest<{ Params: { id: string } }>,
-  reply: FastifyReply
-): Promise<DeleteItemResponse> {
-  try {
-    const storage = getStorage();
-    const deleted = await storage.deleteItem(request.params.id);
-
-    if (!deleted) {
-      reply.code(404);
-      return {
-        success: false,
-        message: 'Item not found',
-      };
-    }
-
-    return {
-      success: true,
-      message: 'Item deleted successfully',
-    };
-  } catch (error) {
-    reply.code(500);
-    return {
-      success: false,
-      message: `Failed to delete item: ${(error as Error).message}`,
-    };
-  }
-}
-
-/**
- * 批量删除项目
- */
-async function deleteItemsHandler(
-  request: FastifyRequest<{ Body: { ids: string[] } }>,
-  reply: FastifyReply
-): Promise<{ success: boolean; message?: string; count?: number }> {
-  try {
-    const { ids } = request.body;
-
-    if (!Array.isArray(ids) || ids.length === 0) {
-      reply.code(400);
-      return {
-        success: false,
-        message: 'Invalid request: ids array is required',
-      };
-    }
-
-    const storage = getStorage();
-    const count = await storage.deleteItems(ids);
-
-    return {
-      success: true,
-      message: `Deleted ${count} item(s)`,
-      count,
-    };
-  } catch (error) {
-    reply.code(500);
-    return {
-      success: false,
-      message: `Failed to delete items: ${(error as Error).message}`,
-    };
-  }
-}
-
-/**
  * 注册路由
  */
 export async function itemsRoutes(fastify: FastifyInstance): Promise<void> {
-  // 保存项目
+  // 同步所有数据（全量替换）
   fastify.post(
-    '/items',
+    '/items/sync',
     {
       schema: {
         body: {
           type: 'object',
-          required: ['content', 'metadata'],
+          required: ['items'],
           properties: {
-            id: { type: 'string' }, // 可选的项目ID
-            content: { type: 'string', maxLength: CONTENT_LIMITS.MAX_CONTENT_SIZE },
-            originalPlain: { type: 'string' },
-            originalHtml: { type: 'string' },
-            metadata: {
-              type: 'object',
-              required: ['sourceUrl', 'title', 'timestamp'],
-              properties: {
-                sourceUrl: { type: 'string' },
-                title: { type: 'string' },
-                timestamp: { type: 'number' },
+            items: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['id', 'content', 'metadata', 'createdAt', 'size'],
+                properties: {
+                  id: { type: 'string' },
+                  content: { type: 'string' },
+                  metadata: {
+                    type: 'object',
+                    required: ['sourceUrl', 'title', 'timestamp'],
+                    properties: {
+                      sourceUrl: { type: 'string' },
+                      title: { type: 'string' },
+                      timestamp: { type: 'number' },
+                    },
+                  },
+                  createdAt: { type: 'number' },
+                  size: { type: 'number' },
+                },
               },
             },
           },
         },
       },
     },
-    saveItemHandler
+    syncItemsHandler
   );
 
-  // 获取项目列表
-  fastify.get(
-    '/items',
-    {
-      schema: {
-        querystring: {
-          type: 'object',
-          properties: {
-            limit: { type: 'string', pattern: '^\\d+$' },
-            offset: { type: 'string', pattern: '^\\d+$' },
-          },
-        },
-      },
-    },
-    getItemsHandler
-  );
+  // 获取最新项目
+  fastify.get('/items/latest', {}, getLatestItemHandler);
 
-  // 获取单个项目
+  // 获取单个项目（按ID查询）
   fastify.get(
     '/items/:id',
     {
@@ -219,42 +146,5 @@ export async function itemsRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     getItemHandler
-  );
-
-  // 删除单个项目
-  fastify.delete(
-    '/items/:id',
-    {
-      schema: {
-        params: {
-          type: 'object',
-          required: ['id'],
-          properties: {
-            id: { type: 'string' },
-          },
-        },
-      },
-    },
-    deleteItemHandler
-  );
-
-  // 批量删除项目
-  fastify.delete(
-    '/items',
-    {
-      schema: {
-        body: {
-          type: 'object',
-          required: ['ids'],
-          properties: {
-            ids: {
-              type: 'array',
-              items: { type: 'string' },
-            },
-          },
-        },
-      },
-    },
-    deleteItemsHandler
   );
 }
